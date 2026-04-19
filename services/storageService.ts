@@ -1,8 +1,8 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { StockItem, Product, User, ReceiptHistory, ReleaseHistory, GuestRequest } from "../types";
 
-const SUPABASE_URL = "https://iovkwbomfhwlbmrnaqlu.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlvdmt3Ym9tZmh3bGJtcm5hcWx1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0MDczMDMsImV4cCI6MjA4MTk4MzMwM30.dTU6IuoTbvTqYYMnWbmE3zFmY9JSTO-l-6Dro2AMIi4";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 let supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: false }
@@ -13,13 +13,58 @@ export const storageService = {
 
   migrateDatabase: async (): Promise<void> => {
     const queries = [
-      'ALTER TABLE products ADD COLUMN IF NOT EXISTS search_name TEXT;',
-      'ALTER TABLE products ADD COLUMN IF NOT EXISTS min_stock INTEGER DEFAULT 0;',
-      'ALTER TABLE products ADD COLUMN IF NOT EXISTS critical_stock INTEGER DEFAULT 0;',
-      'ALTER TABLE products ADD COLUMN IF NOT EXISTS alert_email TEXT;',
-      'ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT \'staff\';',
-      'ALTER TABLE guest_requests ADD COLUMN IF NOT EXISTS file_number TEXT;',
-      'ALTER TABLE guest_requests ADD COLUMN IF NOT EXISTS hn_number TEXT;',
+      // Core Tables
+      `CREATE TABLE IF NOT EXISTS products (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        thai_name TEXT NOT NULL,
+        english_name TEXT,
+        search_name TEXT,
+        manufacturer TEXT,
+        contact_number TEXT,
+        min_stock INTEGER DEFAULT 0,
+        critical_stock INTEGER DEFAULT 0,
+        alert_email TEXT,
+        photo TEXT,
+        status TEXT DEFAULT 'Active',
+        registered_by TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+      );`,
+      `CREATE TABLE IF NOT EXISTS stock_items (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        thai_name TEXT,
+        english_name TEXT,
+        batch_no TEXT,
+        mfd DATE,
+        exp DATE,
+        manufacturer TEXT,
+        quantity INTEGER DEFAULT 1,
+        status TEXT DEFAULT 'In Stock',
+        processed_by TEXT,
+        patient_name TEXT,
+        timestamp TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+        release_timestamp TIMESTAMP WITH TIME ZONE
+      );`,
+      `CREATE TABLE IF NOT EXISTS receipt_history (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        thai_name TEXT,
+        english_name TEXT,
+        batch_no TEXT,
+        exp DATE,
+        quantity INTEGER,
+        processed_by TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+      );`,
+      `CREATE TABLE IF NOT EXISTS release_history (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        thai_name TEXT,
+        english_name TEXT,
+        batch_no TEXT,
+        exp DATE,
+        quantity INTEGER,
+        processed_by TEXT,
+        patient_name TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+      );`,
       `CREATE TABLE IF NOT EXISTS guest_requests (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
         type TEXT NOT NULL,
@@ -32,7 +77,27 @@ export const storageService = {
         file_number TEXT,
         hn_number TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-      );`
+      );`,
+      `CREATE TABLE IF NOT EXISTS users (
+        id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+        firstName TEXT,
+        lastName TEXT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT,
+        role TEXT DEFAULT 'staff'
+      );`,
+      // Default Admin
+      `INSERT INTO users (firstName, lastName, username, password, role)
+       VALUES ('Admin', 'System', 'admin', '1234', 'admin')
+       ON CONFLICT (username) DO NOTHING;`,
+      // Column Updates (Safety)
+      'ALTER TABLE products ADD COLUMN IF NOT EXISTS search_name TEXT;',
+      'ALTER TABLE products ADD COLUMN IF NOT EXISTS min_stock INTEGER DEFAULT 0;',
+      'ALTER TABLE products ADD COLUMN IF NOT EXISTS critical_stock INTEGER DEFAULT 0;',
+      'ALTER TABLE products ADD COLUMN IF NOT EXISTS alert_email TEXT;',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT \'staff\';',
+      'ALTER TABLE guest_requests ADD COLUMN IF NOT EXISTS file_number TEXT;',
+      'ALTER TABLE guest_requests ADD COLUMN IF NOT EXISTS hn_number TEXT;'
     ];
 
     for (const sql of queries) {
@@ -47,19 +112,26 @@ export const storageService = {
   fetchUsers: async (): Promise<User[]> => {
     const { data, error } = await supabase.from('users').select('*').order('username');
     if (error) throw error;
-    return data as User[];
+    // Normalize keys to camelCase for the frontend
+    return (data || []).map((u: any) => ({
+      ...u,
+      firstName: u.firstName || u.firstname || '',
+      lastName: u.lastName || u.lastname || ''
+    })) as User[];
   },
 
   registerUser: async (user: Omit<User, 'id'>): Promise<User> => {
     const { data, error } = await supabase.from('users').insert([user]).select().single();
     if (error) throw error;
-    return data as User;
+    const u = data as any;
+    return { ...u, firstName: u.firstName || u.firstname || '', lastName: u.lastName || u.lastname || '' } as User;
   },
 
   updateUser: async (id: string, updates: Partial<User>): Promise<User> => {
     const { data, error } = await supabase.from('users').update(updates).eq('id', id).select().single();
     if (error) throw error;
-    return data as User;
+    const u = data as any;
+    return { ...u, firstName: u.firstName || u.firstname || '', lastName: u.lastName || u.lastname || '' } as User;
   },
 
   deleteUser: async (id: string): Promise<void> => {

@@ -86,8 +86,13 @@ const App: React.FC = () => {
       setReceiptHistory(historyData || []);
       setReleaseHistory(outHistoryData || []);
       setGuestRequests(guestData || []);
+      
+      if (usersData?.length === 0) {
+        console.warn("Supabase returned 0 users. If you just created the tables, make sure Row Level Security (RLS) is disabled or you have added access policies.");
+      }
     } catch (err: any) {
-      setError("Cloud Connection Error: " + (err.message || "Unknown error"));
+      console.error("Supabase load error:", err);
+      setError("Cloud Connection Error: " + (err.message || "Unknown error") + " (Check console for details)");
     } finally {
       setIsDataLoading(false);
     }
@@ -102,7 +107,10 @@ const App: React.FC = () => {
 
   const handleVerifyPassword = () => {
     if (!loginAttemptUser) return;
-    if (loginPassword === loginAttemptUser.password) {
+    const inputPass = String(loginPassword).trim();
+    const userPass = String(loginAttemptUser.password || '').trim();
+    
+    if (inputPass === userPass) {
       setCurrentUser(loginAttemptUser);
       localStorage.setItem('current_user', JSON.stringify(loginAttemptUser));
       showSuccess(`ยินดีต้อนรับ คุณ ${loginAttemptUser.firstName}`);
@@ -574,7 +582,7 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-md z-[600] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-sm rounded-[3rem] p-8 space-y-6 shadow-2xl">
             <div className="text-center">
-              <div className="w-20 h-20 bg-blue-50 text-blue-900 rounded-full flex items-center justify-center mx-auto text-3xl font-black mb-4">{loginAttemptUser.firstName[0]}</div>
+              <div className="w-20 h-20 bg-blue-50 text-blue-900 rounded-full flex items-center justify-center mx-auto text-3xl font-black mb-4">{(loginAttemptUser?.firstName || '?')[0]}</div>
               <h3 className="text-2xl font-black text-blue-900">ระบุรหัสผ่าน</h3>
               <p className="text-xs font-bold text-slate-400 mt-1 uppercase">User: {loginAttemptUser.username}</p>
             </div>
@@ -796,7 +804,7 @@ const App: React.FC = () => {
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase">ชื่อผู้ป่วย / หน่วยงาน</label>
-                      <input className="w-full p-4 bg-slate-50 rounded-xl outline-none font-black text-blue-900" value={patientName} onChange={setPatientName(e.target.value)} />
+                      <input className="w-full p-4 bg-slate-50 rounded-xl outline-none font-black text-blue-900" value={patientName} onChange={e => setPatientName(e.target.value)} />
                     </div>
                     <div className="bg-red-50 p-6 rounded-[2rem] text-center">
                       <p className="text-[10px] font-black text-red-400 mb-2">จำนวนที่จ่าย</p>
@@ -1022,15 +1030,24 @@ const App: React.FC = () => {
               <p className="text-xs font-bold text-slate-300 uppercase mt-3 tracking-widest">Authorized Personnel Only</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {users.map(u => (
-                <div key={u.id} onClick={() => {setLoginAttemptUser(u); setLoginPassword('');}} className="p-6 bg-white rounded-[2.5rem] border-2 border-slate-100 hover:border-blue-500 cursor-pointer flex items-center gap-5">
-                  <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center font-black text-xl">{u.firstName[0]}</div>
-                  <div>
-                    <p className="font-black text-slate-800">{u.firstName}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">{u.role}</p>
+              {users.length > 0 ? (
+                users.map(u => (
+                  <div key={u.id} onClick={() => {setLoginAttemptUser(u); setLoginPassword('');}} className="p-6 bg-white rounded-[2.5rem] border-2 border-slate-100 hover:border-blue-500 cursor-pointer flex items-center gap-5">
+                    <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center font-black text-xl">{(u.firstName || '?')[0]}</div>
+                    <div>
+                      <p className="font-black text-slate-800">{u.firstName}</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">{u.role}</p>
+                    </div>
                   </div>
+                ))
+              ) : (
+                <div className="col-span-full p-20 bg-white rounded-[3rem] border-4 border-dashed border-slate-100 text-center">
+                   <span className="text-4xl mb-4 block">🔌</span>
+                   <p className="font-black text-slate-400 uppercase tracking-widest text-xs">ไม่พบรายชื่อบุคลากร</p>
+                   <p className="text-[10px] text-slate-400 mt-2">กรุณาตรวจสอบการเชื่อมต่อ Supabase หรือเปิดใช้งาน RLS Policy</p>
+                   <button onClick={() => loadData()} className="mt-6 px-6 py-3 bg-slate-100 text-slate-500 rounded-2xl font-black text-xs">RELOAD 🔄</button>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         )}
@@ -1106,7 +1123,7 @@ const App: React.FC = () => {
               {users.map(u => (
                 <div key={u.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 flex items-center justify-between shadow-sm hover:border-purple-200 transition-all">
                   <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-white ${u.role === 'admin' ? 'bg-purple-600' : 'bg-blue-600'}`}>{u.firstName[0]}</div>
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-white ${u.role === 'admin' ? 'bg-purple-600' : 'bg-blue-600'}`}>{(u.firstName || '?')[0]}</div>
                     <div>
                       <p className="font-black text-slate-800">{u.firstName}</p>
                       <p className="text-[10px] font-bold text-slate-400 uppercase">@{u.username} • {u.role}</p>

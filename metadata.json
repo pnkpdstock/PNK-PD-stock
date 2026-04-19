@@ -1,0 +1,7 @@
+{
+  "name": "PNK_PD Online Stock v.1.1",
+  "description": "Inventory management system for medical supplies using Gemini AI for label recognition and persistent storage.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

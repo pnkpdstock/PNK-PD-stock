@@ -3,75 +3,63 @@ import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import cors from 'cors';
-import { GoogleGenAI, Type } from "@google/genai";
+import nodemailer from 'nodemailer';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Configure Nodemailer for Gmail
+const transporter = process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD ? nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
+}) : null;
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// API Endpoint for Secure Gemini Processing
-app.post('/api/extract-label', async (req, res) => {
+// API Endpoint for Email Alerts
+app.post('/api/send-alert', async (req, res) => {
   try {
-    const { image } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      return res.status(500).json({ error: "Gemini API Key is not configured on the server." });
+    const { product, currentStock, criticalLevel, recipients } = req.body;
+    
+    if (!transporter) {
+      return res.status(500).json({ error: "Email service (Gmail) is not configured on the server." });
     }
 
-    const genAI = new GoogleGenAI({ apiKey });
+    if (!recipients || recipients.length === 0) {
+      return res.status(400).json({ error: "No recipients provided." });
+    }
 
-    const prompt = `คุณเป็นผู้เชี่ยวชาญด้านคลังยา (Pharmacist Assistant) หน้าที่ของคุณคือสกัดข้อมูลจากรูปภาพฉลากถุงน้ำยาล้างไต (PD Fluid) 
-    และส่งกลับเป็น JSON เท่านั้น โดยมีฟิลด์ดังนี้:
-    - thaiName: ชื่อภาษาไทย (เช่น น้ำยาล้างไต 2.5%)
-    - englishName: ชื่อภาษาอังกฤษ
-    - batchNo: เลข Lot หรือ Batch Number
-    - mfd: วันที่ผลิต (รูปแบบ YYYY-MM-DD)
-    - exp: วันหมดอายุ (รูปแบบ YYYY-MM-DD)
-    - manufacturer: บริษัทผู้ผลิต (เช่น Baxter, Fresenius)
-    
-    หากข้อมูลฟิลด์ไหนไม่พบ ให้ใส่ค่าว่าง ""
-    ส่งข้อมูลกลับมาในรูปแบบ JSON Object เท่านั้น ห้ามมี Markdown block`;
+    const toEmails = Array.isArray(recipients) ? recipients.join(', ') : recipients;
 
-    const response = await genAI.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: {
-        parts: [
-          { text: prompt },
-          {
-            inlineData: {
-              data: image.split(',')[1],
-              mimeType: "image/jpeg"
-            }
-          }
-        ]
-      },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            thaiName: { type: Type.STRING },
-            englishName: { type: Type.STRING },
-            batchNo: { type: Type.STRING },
-            mfd: { type: Type.STRING },
-            exp: { type: Type.STRING },
-            manufacturer: { type: Type.STRING },
-          },
-          required: ["thaiName", "englishName", "batchNo", "mfd", "exp", "manufacturer"]
-        }
-      }
-    });
+    const mailOptions = {
+      from: `"PNK PD Stock Alert" <${process.env.GMAIL_USER}>`,
+      to: toEmails,
+      subject: `⚠️ แจ้งเตือน: สินค้า ${product} ต่ำกว่าจุดวิกฤต`,
+      html: `
+        <div style="font-family: sans-serif; padding: 20px; color: #1e293b;">
+          <h2 style="color: #b91c1c;">⚠️ แจ้งเตือนสินค้าต่ำกว่าระดับวิกฤต</h2>
+          <p style="font-size: 16px;">เรียน ผู้ดูแลระบบ,</p>
+          <p style="font-size: 16px;">ขณะนี้สินค้า <strong>"${product}"</strong> ในคลังออนไลน์มีจำนวนคงเหลือต่ำกว่าที่กำหนด</p>
+          <div style="background-color: #fef2f2; border: 1px solid #fee2e2; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 5px 0;">📦 <strong>จำนวนคงเหลือ:</strong> ${currentStock} ชิ้น</p>
+            <p style="margin: 5px 0;">🔔 <strong>จุดวิกฤตที่ตั้งไว้:</strong> ${criticalLevel} ชิ้น</p>
+          </div>
+          <p style="font-size: 14px; color: #64748b;">กรุณาตรวจสอบระบบและดำเนินการสั่งซื้อสินค้าเพิ่มเติม</p>
+          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 30px 0;" />
+          <p style="font-size: 12px; color: #94a3b8;">ส่งโดยระบบ PNK PD Online Stock v.1.0</p>
+        </div>
+      `
+    };
 
-    const text = response.text || "{}";
-    const data = JSON.parse(text);
-
-    res.json(data);
+    await transporter.sendMail(mailOptions);
+    res.json({ success: true });
   } catch (error: any) {
-    console.error("Gemini Server Error:", error);
-    res.status(500).json({ error: error.message || "Failed to process image" });
+    console.error("Email API Route Error:", error);
+    res.status(500).json({ error: error.message });
   }
 });
 

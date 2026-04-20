@@ -113,6 +113,7 @@ export const storageService = {
       'ALTER TABLE products ADD COLUMN IF NOT EXISTS min_stock INTEGER DEFAULT 0;',
       'ALTER TABLE products ADD COLUMN IF NOT EXISTS critical_stock INTEGER DEFAULT 0;',
       'ALTER TABLE products ADD COLUMN IF NOT EXISTS alert_email TEXT;',
+      'ALTER TABLE products ADD COLUMN IF NOT EXISTS alert_acknowledged_at TIMESTAMP WITH TIME ZONE;',
       'ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT \'staff\';',
       'ALTER TABLE guest_requests ADD COLUMN IF NOT EXISTS file_number TEXT;',
       'ALTER TABLE guest_requests ADD COLUMN IF NOT EXISTS hn_number TEXT;'

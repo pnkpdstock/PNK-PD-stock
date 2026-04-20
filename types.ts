@@ -20,6 +20,7 @@ export interface Product {
   photo?: string;
   status?: 'Active' | 'Cancelled';
   registered_by?: string; 
+  alert_acknowledged_at?: string;
   created_at: string;
 }
 

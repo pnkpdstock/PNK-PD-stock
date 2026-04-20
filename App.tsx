@@ -39,6 +39,7 @@ const App: React.FC = () => {
   const [tempCriticalStock, setTempCriticalStock] = useState<number>(0);
   const [tempAlertEmail, setTempAlertEmail] = useState('');
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [sentAlerts, setSentAlerts] = useState<Set<string>>(new Set());
 
   // Search state for manual selection
   const [manualSearchQuery, setManualSearchQuery] = useState('');
@@ -511,9 +512,11 @@ const App: React.FC = () => {
           manufacturer: item.manufacturer, 
           totalCount: 0,
           nearestExpiry: item.exp,
+          productId: master?.id,
           minStock: master?.min_stock || 0,
           criticalStock: master?.critical_stock || 0,
-          alertEmail: master?.alert_email || ''
+          alertEmail: master?.alert_email || '',
+          alertAcknowledgedAt: master?.alert_acknowledged_at
         };
       }
       groups[key].totalCount += (item.quantity || 1);
@@ -522,16 +525,60 @@ const App: React.FC = () => {
       }
     });
 
-    // Check for critical stock alerts
-    Object.values(groups).forEach((group: any) => {
-      if (group.totalCount <= group.criticalStock && group.alertEmail) {
-        // Enforce mock email notification as requested (since we don't have a real mailer)
-        console.warn(`[STOCK ALERT] Product ${group.thaiName} is at CRITICAL level (${group.totalCount}). Sending notification to ${group.alertEmail}`);
-      }
-    });
-
     return Object.values(groups).sort((a: any, b: any) => (a.name || "").localeCompare(b.name || ""));
   }, [items, registeredProducts]);
+
+  // Effect to trigger Real Email Alerts when stock is low
+  useEffect(() => {
+    if (groupedStock.length === 0) return;
+
+    const triggerAlerts = async () => {
+      for (const group of groupedStock) {
+        const productKey = (group.thaiName || group.englishName || "unknown").toLowerCase();
+        
+        // Conditions for alert:
+        // 1. Below or equal critical stock
+        // 2. Alert email is configured
+        // 3. Haven't already sent an alert for this product in this session
+        // 4. Alert has not been acknowledged in the database
+        if (group.totalCount <= group.criticalStock && group.alertEmail && !sentAlerts.has(productKey) && !group.alertAcknowledgedAt) {
+          console.log(`🚀 Sending Real Email Alert for ${group.thaiName} to ${group.alertEmail}`);
+          
+          try {
+            const response = await fetch('/api/send-alert', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                product: group.thaiName || group.englishName,
+                currentStock: group.totalCount,
+                criticalLevel: group.criticalStock,
+                recipients: group.alertEmail
+              })
+            });
+
+            if (response.ok) {
+              setSentAlerts(prev => new Set(prev).add(productKey));
+              console.log(`✅ Alert Email Sent for ${group.thaiName}`);
+            } else {
+              const error = await response.json();
+              console.error("Failed to send alert email:", error);
+            }
+          } catch (err) {
+            console.error("Network error sending alert:", err);
+          }
+        }
+
+        // Automatic reset of acknowledgement: if stock goes above critical, clear the acknowledgement date
+        if (group.totalCount > group.criticalStock && group.alertAcknowledgedAt && group.productId) {
+          storageService.updateProduct(group.productId, { alert_acknowledged_at: undefined }).then(() => {
+             loadData(); // Reload to update state
+          }).catch(console.error);
+        }
+      }
+    };
+
+    triggerAlerts();
+  }, [groupedStock, sentAlerts]);
 
   const sortedGuestRequests = useMemo(() => {
     return [...guestRequests].sort((a, b) => {
@@ -1119,7 +1166,28 @@ const App: React.FC = () => {
             )}
 
             <div className="space-y-4">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">รายชื่อผู้ใช้งานในระบบ</h3>
+              <div className="flex justify-between items-center px-4">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ระบบฐานข้อมูล</h3>
+                <button 
+                  onClick={async () => {
+                    if (!window.confirm("ต้องการเตรียมความพร้อมฐานข้อมูล (Migrate) ใช่หรือไม่?\nขั้นตอนนี้จะสร้างตารางที่จำเป็นใน Supabase")) return;
+                    setIsLoading(true);
+                    try {
+                      await storageService.migrateDatabase();
+                      showSuccess("เตรียมฐานข้อมูลสำเร็จ! พร้อมใช้งานแล้ว");
+                    } catch (err: any) {
+                      setError(err.message);
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                  className="p-3 bg-slate-900 text-white rounded-2xl text-[9px] font-black flex items-center gap-2 active:scale-95 transition-all shadow-lg"
+                >
+                  <span>⚡️</span> ตั้งค่าฐานข้อมูล (MIGRATE)
+                </button>
+              </div>
+
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mt-8">รายชื่อผู้ใช้งานในระบบ</h3>
               {users.map(u => (
                 <div key={u.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 flex items-center justify-between shadow-sm hover:border-purple-200 transition-all">
                   <div className="flex items-center gap-4">
@@ -1163,6 +1231,27 @@ const App: React.FC = () => {
                       <p className={`text-[9px] font-bold uppercase tracking-tighter ${isCritical ? 'text-red-500' : isLow ? 'text-amber-500' : 'text-slate-400'}`}>
                         {isCritical ? '!!! วิกฤติ !!!' : isLow ? '!! ต่ำกว่ากำหนด !!' : 'ยอดคงคลัง'}
                       </p>
+                      {isCritical && !group.alertAcknowledgedAt && group.productId && (
+                        <button 
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!window.confirm(`ยืนยันการรับทราบคำเตือนสำหรับ ${group.thaiName}?\nระบบจะหยุดส่งอีเมลแจ้งเตือนจนกว่าสต็อกจะกลับมาปกติ`)) return;
+                            try {
+                              await storageService.updateProduct(group.productId, { alert_acknowledged_at: new Date().toISOString() });
+                              showSuccess("รับทราบคำเตือนแล้ว");
+                              loadData();
+                            } catch (err: any) {
+                              setError(err.message);
+                            }
+                          }}
+                          className="mt-2 px-3 py-1 bg-red-600 text-white text-[10px] font-bold rounded-full shadow-md active:scale-95 transition-all"
+                        >
+                          🔔 รับทราบ & ปิดแจ้งเตือน
+                        </button>
+                      )}
+                      {isCritical && group.alertAcknowledgedAt && (
+                        <p className="mt-2 text-[8px] font-bold text-red-400 italic">✓ รับทราบแล้วเมื่อ {new Date(group.alertAcknowledgedAt).toLocaleDateString('th-TH')}</p>
+                      )}
                     </div>
                     <div className={`text-xl font-black ${isCritical ? 'text-red-600 animate-blink' : isLow ? 'text-amber-600' : 'text-emerald-600'}`}>
                       {group.totalCount}

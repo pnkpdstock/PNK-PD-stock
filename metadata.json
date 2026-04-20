@@ -1,7 +1,6 @@
 {
-  "name": "PNK_PD Online Stock v.1.1",
-  "description": "Inventory management system for medical supplies using Gemini AI for label recognition and persistent storage.",
-  "requestFramePermissions": [
-    "camera"
-  ]
+  "name": "PNK PD Stock",
+  "description": "Stock and identity management application. Integrated with Supabase for data storage and management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
 }

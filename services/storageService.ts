@@ -4,9 +4,27 @@ import { StockItem, Product, User, ReceiptHistory, ReleaseHistory, GuestRequest 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-let supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false }
-});
+// Check if credentials are missing before initializing
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error("Supabase environment variables are missing! The app will not function correctly. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment/Vercel settings.");
+}
+
+let supabase: SupabaseClient;
+
+try {
+  supabase = createClient(SUPABASE_URL || 'https://placeholder.supabase.co', SUPABASE_KEY || 'placeholder', {
+    auth: { persistSession: false }
+  });
+} catch (e) {
+  console.error("Failed to initialize Supabase client:", e);
+  // Fallback to avoid breaking the build/import
+  supabase = {} as any;
+}
+
+const sanitizeDate = (dateStr: string | undefined | null) => {
+  if (!dateStr || dateStr.trim() === "" || dateStr === "null") return null;
+  return dateStr;
+};
 
 export const storageService = {
   isConfigured: () => true,
@@ -146,7 +164,10 @@ export const storageService = {
   },
 
   saveReceiptHistory: async (history: Omit<ReceiptHistory, 'id' | 'created_at'>): Promise<void> => {
-    const { error } = await supabase.from('receipt_history').insert([history]);
+    const { error } = await supabase.from('receipt_history').insert([{
+      ...history,
+      exp: sanitizeDate(history.exp)
+    }]);
     if (error) throw error;
   },
 
@@ -157,7 +178,10 @@ export const storageService = {
   },
 
   saveReleaseHistory: async (history: Omit<ReleaseHistory, 'id' | 'created_at'>): Promise<void> => {
-    const { error } = await supabase.from('release_history').insert([history]);
+    const { error } = await supabase.from('release_history').insert([{
+      ...history,
+      exp: sanitizeDate(history.exp)
+    }]);
     if (error) throw error;
   },
 
@@ -168,7 +192,10 @@ export const storageService = {
   },
 
   saveGuestRequest: async (request: Omit<GuestRequest, 'id' | 'created_at' | 'status'>): Promise<void> => {
-    const { error } = await supabase.from('guest_requests').insert([request]);
+    const { error } = await supabase.from('guest_requests').insert([{
+      ...request,
+      expected_date: sanitizeDate(request.expected_date)
+    }]);
     if (error) throw error;
   },
 
@@ -189,8 +216,8 @@ export const storageService = {
       thai_name: item.thai_name,
       english_name: item.english_name,
       batch_no: item.batch_no,
-      mfd: item.mfd,
-      exp: item.exp,
+      mfd: sanitizeDate(item.mfd),
+      exp: sanitizeDate(item.exp),
       manufacturer: item.manufacturer,
       quantity: item.quantity,
       status: 'In Stock', 

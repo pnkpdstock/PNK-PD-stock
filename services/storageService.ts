@@ -121,9 +121,11 @@ export const storageService = {
       'ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS receipt_date DATE;',
       'ALTER TABLE receipt_history ADD COLUMN IF NOT EXISTS receipt_date DATE;',
       'ALTER TABLE release_history ADD COLUMN IF NOT EXISTS release_date DATE;',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;',
       'ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT \'staff\';',
       'ALTER TABLE guest_requests ADD COLUMN IF NOT EXISTS file_number TEXT;',
-      'ALTER TABLE guest_requests ADD COLUMN IF NOT EXISTS hn_number TEXT;'
+      'ALTER TABLE guest_requests ADD COLUMN IF NOT EXISTS hn_number TEXT;',
+      'NOTIFY pgrst, \'reload schema\';'
     ];
 
     for (const sql of queries) {

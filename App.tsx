@@ -30,7 +30,7 @@ const App: React.FC = () => {
   const [loginAttemptUser, setLoginAttemptUser] = useState<User | null>(null);
   const [loginPassword, setLoginPassword] = useState('');
 
-  const [newUser, setNewUser] = useState({ firstName: '', lastName: '', username: '', password: '', role: 'staff' as 'admin' | 'staff' });
+  const [newUser, setNewUser] = useState({ firstName: '', lastName: '', username: '', email: '', password: '', role: 'staff' as 'admin' | 'staff' });
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isAddingUser, setIsAddingUser] = useState(false);
   
@@ -367,9 +367,11 @@ const App: React.FC = () => {
     try {
       const data = await extractLabelInfo(image);
       const finalThaiName = (data.thaiName || "").trim() === "" ? (data.englishName || "").trim() : data.thaiName;
-      setScanResult({ ...data, thaiName: finalThaiName, image: image, searchName: '' });
+      setScanResult({ ...data, thaiName: finalThaiName, image: image, searchName: '', alertEmail: currentUser?.email || '' });
       setTempContact('');
       setTempMinStock(0);
+      setTempCriticalStock(0);
+      setTempAlertEmail(currentUser?.email || '');
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -390,12 +392,12 @@ const App: React.FC = () => {
       image: undefined,
       minStock: 0,
       criticalStock: 0,
-      alertEmail: ''
+      alertEmail: currentUser?.email || ''
     });
     setTempContact('');
     setTempMinStock(0);
     setTempCriticalStock(0);
-    setTempAlertEmail('');
+    setTempAlertEmail(currentUser?.email || '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -477,7 +479,7 @@ const App: React.FC = () => {
         await storageService.registerUser(newUser);
         showSuccess("เพิ่มผู้ใช้งานสำเร็จ");
       }
-      setNewUser({ firstName: '', lastName: '', username: '', password: '', role: 'staff' });
+      setNewUser({ firstName: '', lastName: '', username: '', email: '', password: '', role: 'staff' });
       setEditingUser(null);
       setIsAddingUser(false);
       loadData();
@@ -1147,6 +1149,10 @@ const App: React.FC = () => {
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-slate-400 ml-2">Username</label>
                     <input placeholder="ภาษาอังกฤษ" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-blue-900 border border-transparent focus:border-blue-500" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 ml-2">Email แจ้งเตือน</label>
+                    <input placeholder="เช่น example@mail.com" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-blue-900 border border-transparent focus:border-blue-500" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-slate-400 ml-2">รหัสผ่าน (ตัวเลขเท่านั้น)</label>

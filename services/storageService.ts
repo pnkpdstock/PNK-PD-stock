@@ -98,17 +98,21 @@ export const storageService = {
       );`,
       `CREATE TABLE IF NOT EXISTS users (
         id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-        firstName TEXT,
-        lastName TEXT,
+        firstname TEXT,
+        lastname TEXT,
         username TEXT UNIQUE NOT NULL,
+        email TEXT,
         password TEXT,
         role TEXT DEFAULT 'staff'
       );`,
       // Default Admin
-      `INSERT INTO users (firstName, lastName, username, password, role)
+      `INSERT INTO users (firstname, lastname, username, password, role)
        VALUES ('Admin', 'System', 'admin', '1234', 'admin')
        ON CONFLICT (username) DO NOTHING;`,
       // Column Updates (Safety)
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS firstname TEXT;',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS lastname TEXT;',
+      'ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;',
       'ALTER TABLE products ADD COLUMN IF NOT EXISTS search_name TEXT;',
       'ALTER TABLE products ADD COLUMN IF NOT EXISTS min_stock INTEGER DEFAULT 0;',
       'ALTER TABLE products ADD COLUMN IF NOT EXISTS critical_stock INTEGER DEFAULT 0;',
@@ -137,23 +141,40 @@ export const storageService = {
     // Normalize keys to camelCase for the frontend
     return (data || []).map((u: any) => ({
       ...u,
-      firstName: u.firstName || u.firstname || '',
-      lastName: u.lastName || u.lastname || ''
+      firstName: u.firstname || '',
+      lastName: u.lastname || '',
+      email: u.email || ''
     })) as User[];
   },
 
   registerUser: async (user: Omit<User, 'id'>): Promise<User> => {
-    const { data, error } = await supabase.from('users').insert([user]).select().single();
+    const dbUser = {
+      firstname: user.firstName,
+      lastname: user.lastName,
+      username: user.username,
+      email: user.email,
+      password: user.password,
+      role: user.role
+    };
+    const { data, error } = await supabase.from('users').insert([dbUser]).select().single();
     if (error) throw error;
     const u = data as any;
-    return { ...u, firstName: u.firstName || u.firstname || '', lastName: u.lastName || u.lastname || '' } as User;
+    return { ...u, firstName: u.firstname || '', lastName: u.lastname || '', email: u.email || '' } as User;
   },
 
   updateUser: async (id: string, updates: Partial<User>): Promise<User> => {
-    const { data, error } = await supabase.from('users').update(updates).eq('id', id).select().single();
+    const dbUpdates: any = {};
+    if (updates.firstName !== undefined) dbUpdates.firstname = updates.firstName;
+    if (updates.lastName !== undefined) dbUpdates.lastname = updates.lastName;
+    if (updates.username !== undefined) dbUpdates.username = updates.username;
+    if (updates.email !== undefined) dbUpdates.email = updates.email;
+    if (updates.password !== undefined) dbUpdates.password = updates.password;
+    if (updates.role !== undefined) dbUpdates.role = updates.role;
+
+    const { data, error } = await supabase.from('users').update(dbUpdates).eq('id', id).select().single();
     if (error) throw error;
     const u = data as any;
-    return { ...u, firstName: u.firstName || u.firstname || '', lastName: u.lastName || u.lastname || '' } as User;
+    return { ...u, firstName: u.firstname || '', lastName: u.lastname || '', email: u.email || '' } as User;
   },
 
   deleteUser: async (id: string): Promise<void> => {

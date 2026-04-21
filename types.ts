@@ -37,6 +37,7 @@ export interface StockItem {
   processed_by?: string; 
   patient_name?: string; 
   timestamp: string;
+  receipt_date?: string;
   release_timestamp?: string;
 }
 
@@ -48,6 +49,7 @@ export interface ReceiptHistory {
   exp: string;
   quantity: number;
   processed_by: string;
+  receipt_date?: string;
   created_at: string;
 }
 
@@ -60,6 +62,7 @@ export interface ReleaseHistory {
   quantity: number;
   processed_by: string;
   patient_name: string;
+  release_date?: string;
   created_at: string;
 }
 

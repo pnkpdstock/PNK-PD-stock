@@ -114,6 +114,9 @@ export const storageService = {
       'ALTER TABLE products ADD COLUMN IF NOT EXISTS critical_stock INTEGER DEFAULT 0;',
       'ALTER TABLE products ADD COLUMN IF NOT EXISTS alert_email TEXT;',
       'ALTER TABLE products ADD COLUMN IF NOT EXISTS alert_acknowledged_at TIMESTAMP WITH TIME ZONE;',
+      'ALTER TABLE stock_items ADD COLUMN IF NOT EXISTS receipt_date DATE;',
+      'ALTER TABLE receipt_history ADD COLUMN IF NOT EXISTS receipt_date DATE;',
+      'ALTER TABLE release_history ADD COLUMN IF NOT EXISTS release_date DATE;',
       'ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT \'staff\';',
       'ALTER TABLE guest_requests ADD COLUMN IF NOT EXISTS file_number TEXT;',
       'ALTER TABLE guest_requests ADD COLUMN IF NOT EXISTS hn_number TEXT;'
@@ -223,7 +226,8 @@ export const storageService = {
       quantity: item.quantity,
       status: 'In Stock', 
       processed_by: username, 
-      timestamp: timestamp 
+      timestamp: timestamp,
+      receipt_date: sanitizeDate(item.receipt_date)
     };
 
     const { data, error } = await supabase.from('stock_items').insert([newItem]).select().single();
@@ -236,7 +240,8 @@ export const storageService = {
         batch_no: item.batch_no,
         exp: item.exp,
         quantity: item.quantity,
-        processed_by: username || 'System'
+        processed_by: username || 'System',
+        receipt_date: item.receipt_date
       });
     } catch (logErr) {
       console.error("History Log Error:", logErr);
@@ -245,7 +250,7 @@ export const storageService = {
     return data as StockItem;
   },
 
-  releaseItemByBatch: async (batch_no: string, qtyToRelease: number, username?: string, patient_name?: string): Promise<StockItem | null> => {
+  releaseItemByBatch: async (batch_no: string, qtyToRelease: number, username?: string, patient_name?: string, releaseDate?: string): Promise<StockItem | null> => {
     const { data: items, error: findError } = await supabase
       .from('stock_items')
       .select('*')
@@ -304,7 +309,8 @@ export const storageService = {
         exp: firstItem.exp,
         quantity: qtyToRelease,
         processed_by: username || 'System',
-        patient_name: patient_name || 'N/A'
+        patient_name: patient_name || 'N/A',
+        release_date: releaseDate
       });
     } catch (err) {
       console.error("Failed to save release history:", err);

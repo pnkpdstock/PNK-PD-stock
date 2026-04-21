@@ -44,6 +44,7 @@ const App: React.FC = () => {
   // Search state for manual selection
   const [manualSearchQuery, setManualSearchQuery] = useState('');
   const [isManualMode, setIsManualMode] = useState(false);
+  const [manualDate, setManualDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   // Guest Form State
   const [guestForm, setGuestForm] = useState({
@@ -262,6 +263,7 @@ const App: React.FC = () => {
     setMatchedProduct(product);
     setScanResult({ ...data, thaiName: product.thai_name, englishName: product.english_name });
     setInputQty(1);
+    setManualDate(new Date().toISOString().split('T')[0]);
     setManualSearchQuery('');
   };
 
@@ -280,7 +282,8 @@ const App: React.FC = () => {
         mfd: scanResult.mfd,
         exp: scanResult.exp,
         manufacturer: scanResult.manufacturer,
-        quantity: inputQty
+        quantity: inputQty,
+        receipt_date: manualDate
       }, currentUser.username);
       setScanResult(null);
       setMatchedProduct(null);
@@ -323,6 +326,7 @@ const App: React.FC = () => {
     setScanResult({ ...data, thaiName: product.thai_name, englishName: product.english_name });
     setInputQty(1);
     setPatientName('');
+    setManualDate(new Date().toISOString().split('T')[0]);
     setManualSearchQuery('');
   };
 
@@ -337,7 +341,7 @@ const App: React.FC = () => {
     }
     setIsLoading(true);
     try {
-      const releasedItem = await storageService.releaseItemByBatch(scanResult.batchNo, inputQty, currentUser.username, patientName);
+      const releasedItem = await storageService.releaseItemByBatch(scanResult.batchNo, inputQty, currentUser.username, patientName, manualDate);
       if (releasedItem) {
         showSuccess(`จ่ายออกสำเร็จ`);
         setScanResult(null);
@@ -789,6 +793,10 @@ const App: React.FC = () => {
                       <input type="date" className="w-full p-4 bg-slate-50 rounded-xl outline-none font-black text-blue-900" value={scanResult.exp} onChange={e => setScanResult({...scanResult, exp: e.target.value})} />
                     </div>
                   </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-slate-400 uppercase">วันที่รับเข้าสินค้า (ย้อนหลังได้)</label>
+                    <input type="date" className="w-full p-4 bg-slate-50 rounded-xl outline-none font-black text-blue-900 border-2 border-blue-100" value={manualDate} onChange={e => setManualDate(e.target.value)} />
+                  </div>
                   <div className="bg-blue-50 p-6 rounded-[2rem] text-center">
                     <p className="text-[10px] font-black text-blue-400 mb-2">จำนวนที่รับเข้า</p>
                     <div className="flex items-center justify-center gap-6">
@@ -852,6 +860,10 @@ const App: React.FC = () => {
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase">ชื่อผู้ป่วย / หน่วยงาน</label>
                       <input className="w-full p-4 bg-slate-50 rounded-xl outline-none font-black text-blue-900" value={patientName} onChange={e => setPatientName(e.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase">วันที่จ่ายออก (ย้อนหลังได้)</label>
+                      <input type="date" className="w-full p-4 bg-slate-50 rounded-xl outline-none font-black text-blue-900 border-2 border-red-100" value={manualDate} onChange={e => setManualDate(e.target.value)} />
                     </div>
                     <div className="bg-red-50 p-6 rounded-[2rem] text-center">
                       <p className="text-[10px] font-black text-red-400 mb-2">จำนวนที่จ่าย</p>

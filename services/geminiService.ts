@@ -1,9 +1,32 @@
 import { LabelExtractionResult } from "../types";
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Initialize Gemini on the client side as per AI Studio Build best practices
-const apiKey = process.env.GEMINI_API_KEY;
+// Initialize Gemini with robust key detection and sanitization
+const getApiKey = () => {
+  // 1. Try standard process.env (AI Studio Build injected)
+  // 2. Try Vite's VITE_ prefix (Standard for Vercel/Vite)
+  // 3. Try import.meta.env (Fallback)
+  const rawKey = process.env.GEMINI_API_KEY || (import.meta as any).env.VITE_GEMINI_API_KEY || (import.meta as any).env.GEMINI_API_KEY;
+  
+  if (!rawKey) return null;
+
+  // Cleanup: Remove quotes and whitespace that often get added in Vercel settings
+  const cleanKey = String(rawKey).trim().replace(/^["']|["']$/g, '');
+  
+  // Basic validation: Google API keys usually start with AIza
+  if (cleanKey.length < 10) {
+    console.warn("⚠️ Gemini API Key seems too short. Found length:", cleanKey.length);
+  }
+  
+  return cleanKey;
+};
+
+const apiKey = getApiKey();
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+
+if (apiKey) {
+  console.log("🚀 Gemini API initialized with key length:", apiKey.length, "starts with:", apiKey.substring(0, 4));
+}
 
 export async function extractLabelInfo(base64Image: string): Promise<LabelExtractionResult> {
   if (!ai) {

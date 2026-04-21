@@ -58,7 +58,11 @@ const App: React.FC = () => {
   });
 
   useEffect(() => {
-    loadData();
+    const init = async () => {
+      await storageService.migrateDatabase();
+      loadData();
+    };
+    init();
     const savedUser = localStorage.getItem('current_user');
     if (savedUser) {
       try {
@@ -196,13 +200,15 @@ const App: React.FC = () => {
       const pThai = normalize(p.thai_name);
       const pEng = normalize(p.english_name);
       const pSearch = normalize(p.search_name);
+      const pAISearch = normalize(p.ai_search_name || '');
       const prefixLength = 10;
       const thaiPrefixMatch = normSThai.length >= prefixLength && pThai.length >= prefixLength && normSThai.substring(0, prefixLength) === pThai.substring(0, prefixLength);
       const engPrefixMatch = normSEng.length >= prefixLength && pEng.length >= prefixLength && normSEng.substring(0, prefixLength) === pEng.substring(0, prefixLength);
       const thaiContains = (normSThai && pThai.includes(normSThai)) || (normSThai && pThai.length > 0 && normSThai.includes(pThai));
       const engContains = (normSEng && pEng.includes(normSEng)) || (normSEng && pEng.length > 0 && normSEng.includes(pEng));
       const searchContains = (normSThai && pSearch.includes(normSThai)) || (normSEng && pSearch.includes(normSEng));
-      return thaiPrefixMatch || engPrefixMatch || thaiContains || engContains || searchContains;
+      const aiSearchMatch = (normSThai && pAISearch && pAISearch.includes(normSThai)) || (normSEng && pAISearch && pAISearch.includes(normSEng));
+      return thaiPrefixMatch || engPrefixMatch || thaiContains || engContains || searchContains || aiSearchMatch;
     });
   };
 
@@ -231,7 +237,8 @@ const App: React.FC = () => {
     return registeredProducts.filter(p => 
       p.thai_name?.toLowerCase().includes(query) || 
       p.english_name?.toLowerCase().includes(query) || 
-      p.search_name?.toLowerCase().includes(query)
+      p.search_name?.toLowerCase().includes(query) ||
+      p.ai_search_name?.toLowerCase().includes(query)
     );
   }, [manualSearchQuery, registeredProducts]);
 
@@ -365,15 +372,42 @@ const App: React.FC = () => {
     setError(null);
     setEditingProductId(null);
     try {
-      const data = await extractLabelInfo(image);
-      const finalThaiName = (data.thaiName || "").trim() === "" ? (data.englishName || "").trim() : data.thaiName;
-      setScanResult({ ...data, thaiName: finalThaiName, image: image, searchName: '', alertEmail: currentUser?.email || '' });
+      const info = await extractLabelInfo(image);
+      const finalThaiName = (info.thaiName || "").trim() === "" ? (info.englishName || "").trim() : info.thaiName;
+      setScanResult({ 
+        ...info, 
+        thaiName: finalThaiName, 
+        image: image, 
+        searchName: '', 
+        alertEmail: currentUser?.email || '',
+        aiSearchName: info.aiSearchName || info.thaiName || info.englishName || ''
+      });
       setTempContact('');
       setTempMinStock(0);
       setTempCriticalStock(0);
       setTempAlertEmail(currentUser?.email || '');
+      showSuccess("AI เตรียมข้อมูลให้แล้ว กรุณาตรวจสอบก่อนบันทึก");
     } catch (err: any) {
-      setError(err.message);
+      setError("AI Scan Error: " + err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleProductScanDuringRegistration = async (imageBase64: string) => {
+    setIsLoading(true);
+    try {
+      const extracted = await extractLabelInfo(imageBase64);
+      if (scanResult) {
+        setScanResult({
+          ...scanResult,
+          image: imageBase64,
+          aiSearchName: extracted.aiSearchName || extracted.thaiName || extracted.englishName || scanResult.aiSearchName
+        });
+      }
+      showSuccess("AI วิเคราะห์รูปภาพและบันทึก AI Search Name แล้ว");
+    } catch (err: any) {
+      setError("AI Error: " + err.message);
     } finally {
       setIsLoading(false);
     }
@@ -407,6 +441,7 @@ const App: React.FC = () => {
       thaiName: product.thai_name,
       englishName: product.english_name,
       searchName: product.search_name || '',
+      aiSearchName: product.ai_search_name || '',
       batchNo: '',
       mfd: '',
       exp: '',
@@ -439,8 +474,9 @@ const App: React.FC = () => {
     try {
       const productPayload = {
         thai_name: scanResult.thaiName,
-        english_name: scanResult.english_name,
+        english_name: scanResult.englishName,
         search_name: scanResult.searchName || '',
+        ai_search_name: scanResult.aiSearchName || '',
         manufacturer: scanResult.manufacturer,
         contact_number: tempContact.replace(/\D/g, ''),
         min_stock: tempMinStock,
@@ -907,19 +943,46 @@ const App: React.FC = () => {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2">ชื่อไทย</label>
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2">ชื่อเต็ม (Full Name)</label>
                       <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-blue-900" value={scanResult.thaiName} onChange={e => setScanResult({...scanResult, thaiName: e.target.value})} />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2">ชื่อค้นหา (Search Name)</label>
-                      <input className="w-full p-4 bg-blue-50/50 rounded-2xl outline-none font-black text-blue-900" placeholder="เช่น รหัสย่อ หรือ ชื่อเรียกสั้นๆ" value={scanResult.searchName} onChange={e => setScanResult({...scanResult, searchName: e.target.value})} />
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2">AI Search Name (AI ONLY)</label>
+                      <input 
+                        readOnly
+                        className="w-full p-4 bg-amber-50 cursor-not-allowed rounded-2xl outline-none font-black text-amber-900 border border-amber-100" 
+                        placeholder="[AI จะใส่ข้อมูลให้อัตโนมัติเมื่อเพิ่มรูป]" 
+                        value={scanResult.aiSearchName} 
+                      />
                     </div>
                   </div>
+                  
+                  {/* Photo Section in Registration */}
+                  <div className="space-y-4 pt-6 border-t border-slate-100">
+                    <label className="text-[10px] font-black text-slate-400 uppercase ml-2">รูปภาพสินค้า (ต้องมีอย่างน้อย 1 รูปเพื่อให้ AI ทำงาน)</label>
+                    <Scanner 
+                      label={scanResult.image ? "เปลี่ยนรูปสินค้า" : "เพิ่มรูปสินค้าเพื่อให้ AI วิเคราะห์"} 
+                      onScan={handleProductScanDuringRegistration} 
+                      isLoading={isLoading} 
+                    />
+                    {scanResult.image && (
+                      <div className="w-full h-48 bg-slate-50 rounded-[2rem] overflow-hidden border-2 border-slate-100 flex items-center justify-center p-2">
+                        <img src={scanResult.image} alt="Target Product" className="h-full object-contain rounded-xl" />
+                      </div>
+                    )}
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase ml-2">ชื่อค้นหาทั่วไป (Search Name)</label>
+                      <input className="w-full p-4 bg-blue-50/50 rounded-2xl outline-none font-black text-blue-900" placeholder="เช่น รหัสย่อ หรือ ชื่อเรียกสั้นๆ" value={scanResult.searchName} onChange={e => setScanResult({...scanResult, searchName: e.target.value})} />
+                    </div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase ml-2">ผู้ผลิต</label>
                       <input className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-blue-900" value={scanResult.manufacturer} onChange={e => setScanResult({...scanResult, manufacturer: e.target.value})} />
                     </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Min Stock Alert</label>
                       <input type="number" className="w-full p-4 bg-slate-50 rounded-2xl outline-none font-black text-blue-900" value={tempMinStock} onChange={e => setTempMinStock(parseInt(e.target.value) || 0)} />
@@ -943,7 +1006,14 @@ const App: React.FC = () => {
                    <div className="w-12 h-12 bg-purple-50 rounded-xl flex items-center justify-center text-xl shrink-0 text-purple-600 font-bold">📦</div>
                    <div className="truncate">
                      <p className="font-black text-slate-800 text-sm truncate">{p.thai_name}</p>
-                     <p className="text-[9px] font-bold text-slate-400 uppercase">{p.search_name || 'NO SEARCH TAG'}</p>
+                      <div className="flex gap-1 overflow-hidden">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase truncate">
+                          {p.search_name || 'NO SEARCH TAG'}
+                        </p>
+                        {p.ai_search_name && (
+                          <span className="text-[8px] font-black bg-amber-50 text-amber-600 px-1 rounded uppercase shrink-0">AI: {p.ai_search_name}</span>
+                        )}
+                      </div>
                    </div>
                  </div>
                ))}
@@ -1379,11 +1449,36 @@ const App: React.FC = () => {
         )}
 
       </div>
-
       {error && (
-        <div className="fixed bottom-28 left-4 right-4 bg-red-600 text-white p-6 rounded-[2rem] shadow-2xl z-[800] flex items-center justify-between font-black">
-          <div className="flex items-center gap-4"><span className="text-2xl">⚠️</span><span className="text-xs">{error}</span></div>
-          <button onClick={() => setError(null)} className="bg-white/20 px-3 py-1 rounded-full text-[10px] uppercase">ปิด</button>
+        <div className="fixed bottom-28 left-4 right-4 bg-red-600 text-white p-6 rounded-[2rem] shadow-2xl z-[800] flex items-center justify-between font-black animate-in slide-in-from-bottom-5">
+          <div className="flex items-center gap-4">
+            <span className="text-2xl">⚠️</span>
+            <div className="flex flex-col">
+              <span className="text-xs leading-tight mb-2">{error}</span>
+              {error.toLowerCase().includes('schema cache') && (
+                <button 
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    setIsLoading(true);
+                    try {
+                      await storageService.migrateDatabase();
+                      showSuccess("บังคับอัปเดตระบบแล้ว กรุณาลองใหม่");
+                      setError(null);
+                      loadData();
+                    } catch(err: any) {
+                      setError("Sync ไม่สำเร็จ: " + err.message);
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }} 
+                  className="bg-white text-red-600 px-4 py-2 rounded-xl text-[10px] uppercase shadow-lg active:scale-95 transition-all w-fit"
+                >
+                  แก้ปัญหาด้วยการ SYNC 🔄
+                </button>
+              )}
+            </div>
+          </div>
+          <button onClick={() => setError(null)} className="h-8 w-8 flex shrink-0 items-center justify-center bg-white/20 rounded-full text-xs hover:bg-white/30 transition-colors">✕</button>
         </div>
       )}
     </Layout>

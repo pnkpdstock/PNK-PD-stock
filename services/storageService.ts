@@ -37,6 +37,7 @@ export const storageService = {
         thai_name TEXT NOT NULL,
         english_name TEXT,
         search_name TEXT,
+        ai_search_name TEXT,
         manufacturer TEXT,
         contact_number TEXT,
         min_stock INTEGER DEFAULT 0,
@@ -45,6 +46,7 @@ export const storageService = {
         photo TEXT,
         status TEXT DEFAULT 'Active',
         registered_by TEXT,
+        alert_acknowledged_at TIMESTAMP WITH TIME ZONE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
       );`,
       `CREATE TABLE IF NOT EXISTS stock_items (
@@ -54,6 +56,7 @@ export const storageService = {
         batch_no TEXT,
         mfd DATE,
         exp DATE,
+        receipt_date DATE,
         manufacturer TEXT,
         quantity INTEGER DEFAULT 1,
         status TEXT DEFAULT 'In Stock',
@@ -68,6 +71,7 @@ export const storageService = {
         english_name TEXT,
         batch_no TEXT,
         exp DATE,
+        receipt_date DATE,
         quantity INTEGER,
         processed_by TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
@@ -81,6 +85,7 @@ export const storageService = {
         quantity INTEGER,
         processed_by TEXT,
         patient_name TEXT,
+        release_date DATE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
       );`,
       `CREATE TABLE IF NOT EXISTS guest_requests (
@@ -114,6 +119,7 @@ export const storageService = {
       'ALTER TABLE users ADD COLUMN IF NOT EXISTS lastname TEXT;',
       'ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;',
       'ALTER TABLE products ADD COLUMN IF NOT EXISTS search_name TEXT;',
+      'ALTER TABLE products ADD COLUMN IF NOT EXISTS ai_search_name TEXT;',
       'ALTER TABLE products ADD COLUMN IF NOT EXISTS min_stock INTEGER DEFAULT 0;',
       'ALTER TABLE products ADD COLUMN IF NOT EXISTS critical_stock INTEGER DEFAULT 0;',
       'ALTER TABLE products ADD COLUMN IF NOT EXISTS alert_email TEXT;',
@@ -125,14 +131,24 @@ export const storageService = {
       'ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT \'staff\';',
       'ALTER TABLE guest_requests ADD COLUMN IF NOT EXISTS file_number TEXT;',
       'ALTER TABLE guest_requests ADD COLUMN IF NOT EXISTS hn_number TEXT;',
+      'COMMENT ON COLUMN users.email IS \'User alert email\';',
       'NOTIFY pgrst, \'reload schema\';'
     ];
 
     for (const sql of queries) {
       try {
-        await supabase.rpc('exec_sql', { sql_query: sql });
-      } catch (e) {
-        console.error("Migration error:", e);
+        const { error } = await supabase.rpc('exec_sql', { sql_query: sql });
+        if (error) {
+          console.group(`Migration Command Failed`);
+          console.error("SQL:", sql);
+          console.error("Error:", error);
+          console.groupEnd();
+        }
+      } catch (e: any) {
+        console.group(`Migration RPC Exception`);
+        console.error("SQL:", sql);
+        console.error("Exception:", e);
+        console.groupEnd();
       }
     }
   },

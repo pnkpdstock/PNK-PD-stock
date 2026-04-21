@@ -13,6 +13,7 @@ export interface Product {
   thai_name: string;
   english_name: string;
   search_name: string;
+  ai_search_name?: string;
   manufacturer: string;
   contact_number?: string;
   min_stock?: number;
@@ -85,6 +86,7 @@ export interface LabelExtractionResult {
   thaiName: string;
   englishName: string;
   searchName?: string;
+  aiSearchName?: string;
   batchNo: string;
   mfd: string;
   exp: string;

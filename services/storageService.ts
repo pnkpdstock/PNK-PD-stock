@@ -174,8 +174,9 @@ export const storageService = {
       password: user.password,
       role: user.role
     };
-    const { data, error } = await supabase.from('users').insert([dbUser]).select().single();
+    const { data, error } = await supabase.from('users').insert([dbUser]).select().maybeSingle();
     if (error) throw error;
+    if (!data) throw new Error("Failed to register user: No data returned.");
     const u = data as any;
     return { ...u, firstName: u.firstname || '', lastName: u.lastname || '', email: u.email || '' } as User;
   },
@@ -189,8 +190,9 @@ export const storageService = {
     if (updates.password !== undefined) dbUpdates.password = updates.password;
     if (updates.role !== undefined) dbUpdates.role = updates.role;
 
-    const { data, error } = await supabase.from('users').update(dbUpdates).eq('id', id).select().single();
+    const { data, error } = await supabase.from('users').update(dbUpdates).eq('id', id).select().maybeSingle();
     if (error) throw error;
+    if (!data) throw new Error(`Failed to update user: User with id ${id} not found.`);
     const u = data as any;
     return { ...u, firstName: u.firstname || '', lastName: u.lastname || '', email: u.email || '' } as User;
   },
@@ -269,8 +271,13 @@ export const storageService = {
       receipt_date: sanitizeDate(item.receipt_date)
     };
 
-    const { data, error } = await supabase.from('stock_items').insert([newItem]).select().single();
-    if (error) throw new Error(`บันทึกไม่สำเร็จ: ${error.message}`);
+    const { data, error } = await supabase.from('stock_items').insert([newItem]).select().maybeSingle();
+    if (error) {
+      throw new Error(`บันทึกไม่สำเร็จ: ${error.message}`);
+    }
+    if (!data) {
+      throw new Error("บันทึกไม่สำเร็จ: ไม่ได้รับข้อมูลตอบกลับจากเซิร์ฟเวอร์");
+    }
 
     try {
       await storageService.saveReceiptHistory({
@@ -319,8 +326,9 @@ export const storageService = {
             patient_name: patient_name,
             release_timestamp: new Date().toISOString() 
           })
-          .eq('id', item.id).select().single();
+          .eq('id', item.id).select().maybeSingle();
         if (error) throw error;
+        if (!data) throw new Error(`Failed to update stock item: Item with id ${item.id} not found.`);
         remainingToRelease -= currentQty;
         lastUpdatedItem = data;
       } else {
@@ -333,8 +341,9 @@ export const storageService = {
           processed_by: username,
           patient_name: patient_name,
           release_timestamp: new Date().toISOString()
-        }]).select().single();
+        }]).select().maybeSingle();
         if (insertError) throw insertError;
+        if (!releasedData) throw new Error("Failed to insert released stock item: No data returned.");
         remainingToRelease = 0;
         lastUpdatedItem = releasedData;
       }
@@ -369,14 +378,16 @@ export const storageService = {
       ...product, 
       status: 'Active', 
       registered_by: username 
-    }]).select().single();
+    }]).select().maybeSingle();
     if (error) throw error;
+    if (!data) throw new Error("Failed to register product: No data returned.");
     return data as Product;
   },
 
   updateProduct: async (id: string, updates: Partial<Product>): Promise<Product> => {
-    const { data, error } = await supabase.from('products').update(updates).eq('id', id).select().single();
+    const { data, error } = await supabase.from('products').update(updates).eq('id', id).select().maybeSingle();
     if (error) throw error;
+    if (!data) throw new Error(`Failed to update product: Product with id ${id} not found.`);
     return data as Product;
   }
 };

@@ -40,7 +40,30 @@ const App: React.FC = () => {
   const [tempAlertEmail, setTempAlertEmail] = useState('');
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<any | null>(null);
-  const [sentAlerts, setSentAlerts] = useState<Set<string>>(new Set());
+  const [sentAlerts, setSentAlerts] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem('sent_alerts_session');
+    if (saved) {
+      try {
+        return new Set(JSON.parse(saved));
+      } catch (e) {
+        return new Set();
+      }
+    }
+    return new Set();
+  });
+  const sentAlertsRef = React.useRef<Set<string>>(new Set());
+  const alertCooldowns = React.useRef<Record<string, number>>({});
+
+  // Sync ref with initial state once
+  useEffect(() => {
+    const saved = localStorage.getItem('sent_alerts_session');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        sentAlertsRef.current = new Set(parsed);
+      } catch (e) {}
+    }
+  }, []);
 
   // Search state for manual selection
   const [manualSearchQuery, setManualSearchQuery] = useState('');
@@ -552,6 +575,28 @@ const App: React.FC = () => {
   const groupedStock = useMemo(() => {
     const inStock = items.filter(i => i.status === 'In Stock');
     const groups: Record<string, any> = {};
+
+    // Initialize with all registered products to ensure 0-stock items are shown
+    registeredProducts.forEach(p => {
+      const key = (p.thai_name || p.english_name || "Unknown").toLowerCase();
+      if (!groups[key]) {
+        groups[key] = {
+          name: p.thai_name || p.english_name,
+          thaiName: p.thai_name,
+          englishName: p.english_name,
+          manufacturer: p.manufacturer,
+          totalCount: 0,
+          nearestExpiry: null,
+          productId: p.id,
+          minStock: p.min_stock || 0,
+          criticalStock: p.critical_stock || 0,
+          alertEmail: p.alert_email || '',
+          alertAcknowledgedAt: p.alert_acknowledged_at,
+          batches: []
+        };
+      }
+    });
+
     inStock.forEach(item => {
       const key = (item.thai_name || item.english_name || "Unknown").toLowerCase();
       if (!groups[key]) {
@@ -588,18 +633,27 @@ const App: React.FC = () => {
 
   // Effect to trigger Real Email Alerts when stock is low
   useEffect(() => {
-    if (groupedStock.length === 0) return;
+    if (groupedStock.length === 0 || !currentUser) return;
 
     const triggerAlerts = async () => {
+      const now = Date.now();
       for (const group of groupedStock) {
         const productKey = (group.thaiName || group.englishName || "unknown").toLowerCase();
         
+        // Cooldown check (5 minutes) to prevent loops on errors
+        const lastAttempt = alertCooldowns.current[productKey] || 0;
+        if (now - lastAttempt < 300000) continue; 
+
         // Conditions for alert:
         // 1. Below or equal critical stock
         // 2. Alert email is configured
-        // 3. Haven't already sent an alert for this product in this session
+        // 3. Haven't already sent a SUCCESSFUL alert for this product (Ref check is instant)
         // 4. Alert has not been acknowledged in the database
-        if (group.totalCount <= group.criticalStock && group.alertEmail && !sentAlerts.has(productKey) && !group.alertAcknowledgedAt) {
+        if (group.totalCount <= group.criticalStock && group.alertEmail && !sentAlertsRef.current.has(productKey) && !group.alertAcknowledgedAt) {
+          
+          // Mark as attempted immediately in this session's cooldown record
+          alertCooldowns.current[productKey] = now;
+          
           console.log(`🚀 Sending Real Email Alert for ${group.thaiName} to ${group.alertEmail}`);
           
           try {
@@ -615,11 +669,26 @@ const App: React.FC = () => {
             });
 
             if (response.ok) {
-              setSentAlerts(prev => new Set(prev).add(productKey));
+              // Update Ref immediately so next iteration of the loop doesn't trigger same product
+              sentAlertsRef.current.add(productKey);
+              
+              // Persist to localStorage to survive refreshes
+              localStorage.setItem('sent_alerts_session', JSON.stringify([...sentAlertsRef.current]));
+              
+              setSentAlerts(new Set(sentAlertsRef.current));
               console.log(`✅ Alert Email Sent for ${group.thaiName}`);
+              
+              // Wait 1 second before next email attempt to avoid rate limits
+              await new Promise(resolve => setTimeout(resolve, 1000));
             } else {
               const error = await response.json();
               console.error("Failed to send alert email:", error);
+              
+              // If we hit Gmail rate limit or daily limit, stop the entire loop for this render pass
+              if (error.error?.includes('454') || error.error?.includes('550') || error.error?.includes('Limit')) {
+                console.error("Stopping alert loop due to Gmail limits");
+                return;
+              }
             }
           } catch (err) {
             console.error("Network error sending alert:", err);
@@ -627,17 +696,22 @@ const App: React.FC = () => {
         }
 
         // Automatic reset of acknowledgement: if stock goes above critical, clear the acknowledgement date
-        if (group.totalCount > group.criticalStock && group.alertAcknowledgedAt && group.productId) {
+        if (group.totalCount > group.criticalStock && (group.alertAcknowledgedAt || sentAlertsRef.current.has(productKey)) && group.productId) {
           const pid = group.productId;
           storageService.updateProduct(pid, { alert_acknowledged_at: null }).then(() => {
              setRegisteredProducts(prev => prev.map(p => p.id === pid ? { ...p, alert_acknowledged_at: null } : p));
+             
+             // Also clear session sentinel
+             sentAlertsRef.current.delete(productKey);
+             localStorage.setItem('sent_alerts_session', JSON.stringify([...sentAlertsRef.current]));
+             setSentAlerts(new Set(sentAlertsRef.current));
           }).catch(console.error);
         }
       }
     };
 
     triggerAlerts();
-  }, [groupedStock, sentAlerts]);
+  }, [groupedStock, currentUser]);
 
   const sortedGuestRequests = useMemo(() => {
     return [...guestRequests].sort((a, b) => {
@@ -1236,7 +1310,10 @@ const App: React.FC = () => {
                           </td>
                           <td className="px-8 py-7 text-center">
                             <span className="text-[12px] font-black text-slate-600 bg-slate-100 px-3 py-1 rounded-lg">
-                              {group.nearestExpiry || '-'}
+                              {group.nearestExpiry ? (() => {
+                                const parts = group.nearestExpiry.split('-');
+                                return parts.length >= 2 ? `${parts[1]}/${parts[0]}` : group.nearestExpiry;
+                              })() : '-'}
                             </span>
                           </td>
                         </tr>
@@ -1256,7 +1333,12 @@ const App: React.FC = () => {
                                     {group.batches.map((batch: StockItem, bIdx: number) => (
                                       <tr key={bIdx} className="hover:bg-slate-50">
                                         <td className="px-6 py-3 font-bold text-slate-700 text-xs">{batch.batch_no}</td>
-                                        <td className="px-6 py-3 font-bold text-slate-600 text-xs">{batch.exp}</td>
+                                        <td className="px-6 py-3 font-bold text-slate-600 text-xs">
+                                          {batch.exp ? (() => {
+                                            const parts = batch.exp.split('-');
+                                            return parts.length >= 2 ? `${parts[1]}/${parts[0]}` : batch.exp;
+                                          })() : '-'}
+                                        </td>
                                         <td className="px-6 py-3 font-black text-blue-600 text-xs text-center">{batch.quantity}</td>
                                       </tr>
                                     ))}
@@ -1297,13 +1379,17 @@ const App: React.FC = () => {
                       <div key={bIdx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-slate-50 rounded-2xl border border-slate-100">
                         <div>
                           <p className="text-xs font-black text-slate-700">Batch: {batch.batch_no}</p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase">EXP: {batch.exp}</p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase">
+                            EXP: {batch.exp ? (() => {
+                              const parts = batch.exp.split('-');
+                              return parts.length >= 2 ? `${parts[1]}/${parts[0]}` : batch.exp;
+                            })() : '-'}
+                          </p>
                         </div>
                         <div className="flex items-center gap-4">
                           <button 
                             disabled={isLoading}
                             onClick={async () => {
-                              if (!window.confirm(`ยืนยันการจ่ายออก 1 หน่วย (ปรับแก้) สำหรับ Batch: ${batch.batch_no}?`)) return;
                               setIsLoading(true);
                               try {
                                 await storageService.releaseItemByBatch(batch.batch_no, 1, currentUser.username, "RECALIBRATION", new Date().toISOString().split('T')[0]);
@@ -1354,6 +1440,12 @@ const App: React.FC = () => {
                         </div>
                       </div>
                     ))}
+                    {group.batches.length === 0 && (
+                      <div className="p-8 bg-slate-50 rounded-[2rem] border border-dashed border-slate-200 text-center">
+                        <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">ไม่มีสินค้าในคลัง</p>
+                        <p className="text-[10px] text-slate-300 mt-1">กรุณาใช้เมนู "รับเข้า" เพื่อระบุ Batch No. ใหม่</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1374,14 +1466,51 @@ const App: React.FC = () => {
             <div className="space-y-6">
               {[
                 {
+                  version: 'Update - 016',
+                  date: '2026-04-25',
+                  changes: [
+                    'ปรับปรุงรูปแบบวันหมดอายุใกล้สุดให้แสดงเพียง เดือน/ปี (MM/YYYY)',
+                    'เพิ่มการตรวจจับข้อผิดพลาด Gmail Daily Limit (550) เพื่อหยุดการส่งซ้ำอัตโนมัติ',
+                    'แก้ไขปัญหาแอพค้างจาก Email Loop เมื่อโควตาเต็ม'
+                  ],
+                  isNew: true
+                },
+                {
+                  version: 'Update - 015',
+                  date: '2026-04-25',
+                  changes: [
+                    'แก้ไขปัญหา Email Loop และ Gmail Rate Limit อย่างสมบูรณ์',
+                    'เพิ่มระบบ SMTP Pooling เพื่อลดจำนวนครั้งการ Login ไปยัง Gmail',
+                    'ระบบจดจำสถานะการส่ง Email ลงในเครื่อง (LocalStorage) แม้ Refresh หน้าเดิมก็ไม่ส่งซ้ำ',
+                    'เพิ่มการหน่วงเวลา 1 วินาทีระหว่างการส่งแต่ละฉบับ'
+                  ]
+                },
+                {
+                  version: 'Update - 014',
+                  date: '2026-04-25',
+                  changes: [
+                    'เพิ่มระบบ Email Retry สำหรับจัดการข้อผิดพลาด SMTP 421 (Temporary System Problem)',
+                    'ปรับปรุงความเสถียรของระบบแจ้งเตือนอัตโนมัติ',
+                    'อัปเดตเวอร์ชันเป็น 014'
+                  ]
+                },
+                {
+                  version: 'Update - 013',
+                  date: '2026-04-25',
+                  changes: [
+                    'แสดงรายการสินค้าในหน้าสต็อกแม้จำนวนคงเหลือจะเป็น 0',
+                    'ถอดการยืนยัน (Confirmation) ในโหมด Recalibrate เพื่อความรวดเร็ว',
+                    'ปรับปรุงความเสถียรของระบบคำนวณ Stock Grouping'
+                  ]
+                },
+                {
                   version: 'Update - 012',
                   date: '2026-04-25',
                   changes: [
                     'เพิ่มโหมด Recalibrate Stock สำหรับ Admin เพื่อปรับสต็อกได้ทันที (ไม่ต้องพิมพ์ชื่อ/Batch)',
                     'เปลี่ยนช่องกรอก Batch No. ในหน้า "จ่ายออก" เป็น Dropdown เพื่อความรวดเร็ว',
                     'ปรับปรุงเวอร์ชันเป็น 012'
-                  ],
-                  isNew: true
+                  ]
                 },
                 {
                   version: 'Update - 011',

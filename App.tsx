@@ -39,6 +39,7 @@ const App: React.FC = () => {
   const [tempCriticalStock, setTempCriticalStock] = useState<number>(0);
   const [tempAlertEmail, setTempAlertEmail] = useState('');
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [selectedInventoryItem, setSelectedInventoryItem] = useState<any | null>(null);
   const [sentAlerts, setSentAlerts] = useState<Set<string>>(new Set());
 
   // Search state for manual selection
@@ -191,24 +192,34 @@ const App: React.FC = () => {
     }
   };
 
-  const findMatches = (scannedThai: string, scannedEng: string) => {
+  const findMatches = (scannedThai: string, scannedEng: string, scannedAI: string = '') => {
     const normalize = (s: string) => (s || "").replace(/[\s\-\_\.]/g, '').toLowerCase();
     const normSThai = normalize(scannedThai);
     const normSEng = normalize(scannedEng);
+    const normSAI = normalize(scannedAI);
     
     return registeredProducts.filter(p => {
+      // 1. Direct AI Search Name Match (Highest Priority)
+      const pAISearch = normalize(p.ai_search_name || '');
+      if (normSAI && pAISearch === normSAI) return true;
+
+      // 2. Name Based Matching
       const pThai = normalize(p.thai_name);
       const pEng = normalize(p.english_name);
       const pSearch = normalize(p.search_name);
-      const pAISearch = normalize(p.ai_search_name || '');
+      
       const prefixLength = 10;
       const thaiPrefixMatch = normSThai.length >= prefixLength && pThai.length >= prefixLength && normSThai.substring(0, prefixLength) === pThai.substring(0, prefixLength);
       const engPrefixMatch = normSEng.length >= prefixLength && pEng.length >= prefixLength && normSEng.substring(0, prefixLength) === pEng.substring(0, prefixLength);
+      
       const thaiContains = (normSThai && pThai.includes(normSThai)) || (normSThai && pThai.length > 0 && normSThai.includes(pThai));
       const engContains = (normSEng && pEng.includes(normSEng)) || (normSEng && pEng.length > 0 && normSEng.includes(pEng));
       const searchContains = (normSThai && pSearch.includes(normSThai)) || (normSEng && pSearch.includes(normSEng));
-      const aiSearchMatch = (normSThai && pAISearch && pAISearch.includes(normSThai)) || (normSEng && pAISearch && pAISearch.includes(normSEng));
-      return thaiPrefixMatch || engPrefixMatch || thaiContains || engContains || searchContains || aiSearchMatch;
+      
+      // Also match if the scanned names somehow contain the AI code (fallback)
+      const aiSearchInNames = (normSAI && (pThai.includes(normSAI) || pEng.includes(normSAI) || pSearch.includes(normSAI)));
+
+      return thaiPrefixMatch || engPrefixMatch || thaiContains || engContains || searchContains || aiSearchInNames;
     });
   };
 
@@ -250,8 +261,7 @@ const App: React.FC = () => {
     setMatchedProduct(null);
     try {
       const data = await extractLabelInfo(image);
-      // Fix: Change data.english_name to data.englishName to match the LabelExtractionResult interface
-      const matches = findMatches(data.thaiName, data.englishName);
+      const matches = findMatches(data.thaiName, data.englishName, data.aiSearchName);
       if (matches.length === 0) { 
         setError(`⚠️ ไม่พบสินค้าในทะเบียน กรุณาลองใช้ปุ่ม "เลือกรายการเอง"`); 
         return; 
@@ -312,8 +322,7 @@ const App: React.FC = () => {
     setMatchedProduct(null);
     try {
       const data = await extractLabelInfo(image);
-      // Fix: Change data.english_name to data.englishName to match the LabelExtractionResult interface
-      const matches = findMatches(data.thaiName, data.englishName);
+      const matches = findMatches(data.thaiName, data.englishName, data.aiSearchName);
       if (matches.length === 0) {
         setError(`⚠️ ไม่พบสินค้าในคลัง กรุณาลองใช้ปุ่ม "เลือกรายการเอง"`);
         return;
@@ -558,13 +567,20 @@ const App: React.FC = () => {
           minStock: master?.min_stock || 0,
           criticalStock: master?.critical_stock || 0,
           alertEmail: master?.alert_email || '',
-          alertAcknowledgedAt: master?.alert_acknowledged_at
+          alertAcknowledgedAt: master?.alert_acknowledged_at,
+          batches: [] // Store individual batches here
         };
       }
       groups[key].totalCount += (item.quantity || 1);
+      groups[key].batches.push(item);
       if (item.exp && (!groups[key].nearestExpiry || item.exp < groups[key].nearestExpiry)) {
         groups[key].nearestExpiry = item.exp;
       }
+    });
+
+    // Sort batches by expiry date
+    Object.values(groups).forEach((group: any) => {
+      group.batches.sort((a: StockItem, b: StockItem) => (a.exp || "").localeCompare(b.exp || ""));
     });
 
     return Object.values(groups).sort((a: any, b: any) => (a.name || "").localeCompare(b.name || ""));
@@ -798,6 +814,27 @@ const App: React.FC = () => {
                </div>
              )}
 
+             {scanResult && !matchedProduct && potentialMatches.length > 0 && (
+               <div className="bg-white p-6 rounded-[3rem] shadow-sm border border-slate-100 space-y-4 animate-in slide-in-from-bottom-4">
+                 <div className="flex justify-between items-center">
+                   <h3 className="font-black text-blue-900">พบหลายรายการที่ใกล้เคียง</h3>
+                   <button onClick={() => {setScanResult(null); setPotentialMatches([]);}} className="text-xs font-bold text-slate-400">ยกเลิก</button>
+                 </div>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase">กรุณาเลือกรายการที่ถูกต้องจากรูปภาพ</p>
+                 <div className="space-y-2">
+                   {potentialMatches.map(p => (
+                     <div key={p.id} onClick={() => selectItemForStockIn(p, scanResult)} className="p-4 bg-blue-50/50 rounded-2xl hover:bg-blue-100 cursor-pointer border border-blue-100 flex items-center gap-4">
+                       <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-sm">📦</div>
+                       <div>
+                         <p className="font-black text-blue-900 text-sm">{p.thai_name}</p>
+                         <p className="text-[9px] text-blue-400 font-bold uppercase">{p.search_name || p.english_name} {p.ai_search_name ? `| AI: ${p.ai_search_name}` : ''}</p>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+             )}
+
              {isManualMode && (
                <div className="bg-white p-6 rounded-[3rem] shadow-sm border border-slate-100 space-y-4">
                  <div className="flex justify-between items-center">
@@ -864,6 +901,27 @@ const App: React.FC = () => {
                  <button onClick={() => setIsManualMode(true)} className="w-full py-4 bg-white border-2 border-red-50 text-red-900 font-black rounded-2xl shadow-sm hover:bg-red-50 transition-all flex items-center justify-center gap-2">
                    <span>📂</span> ไม่มีรูป/กล้องเสีย: เลือกรายการเอง
                  </button>
+               </div>
+             )}
+
+             {scanResult && !matchedProduct && potentialMatches.length > 0 && (
+               <div className="bg-white p-6 rounded-[3rem] shadow-sm border border-slate-100 space-y-4 animate-in slide-in-from-bottom-4">
+                 <div className="flex justify-between items-center">
+                   <h3 className="font-black text-red-900">พบหลายรายการที่ใกล้เคียง</h3>
+                   <button onClick={() => {setScanResult(null); setPotentialMatches([]);}} className="text-xs font-bold text-slate-400">ยกเลิก</button>
+                 </div>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase">กรุณาเลือกรายการที่ถูกต้องจากรูปภาพ</p>
+                 <div className="space-y-2">
+                   {potentialMatches.map(p => (
+                     <div key={p.id} onClick={() => selectItemForStockOut(p, scanResult)} className="p-4 bg-red-50/50 rounded-2xl hover:bg-red-100 cursor-pointer border border-red-100 flex items-center gap-4">
+                       <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-sm">📦</div>
+                       <div>
+                         <p className="font-black text-red-900 text-sm">{p.thai_name}</p>
+                         <p className="text-[9px] text-red-400 font-bold uppercase">{p.search_name || p.english_name} {p.ai_search_name ? `| AI: ${p.ai_search_name}` : ''}</p>
+                       </div>
+                     </div>
+                   ))}
+                 </div>
                </div>
              )}
 
@@ -1122,35 +1180,134 @@ const App: React.FC = () => {
                   {groupedStock.map((group: any, idx) => {
                     const isCritical = group.totalCount <= group.criticalStock;
                     const isLow = group.totalCount <= group.minStock && !isCritical;
+                    const isExpanded = selectedInventoryItem?.name === group.name;
+
                     return (
-                      <tr key={idx} className={`hover:bg-slate-50/50 ${isCritical ? 'bg-red-50/30' : ''}`}>
-                        <td className="px-8 py-7">
-                          <div className="font-black text-slate-800">{group.thaiName || group.englishName}</div>
-                          <div className="text-[10px] text-slate-400 font-bold uppercase">{group.manufacturer}</div>
-                        </td>
-                        <td className="px-8 py-7 text-center">
-                          <span className={`px-4 py-2 rounded-2xl font-black text-sm ${
-                            isCritical
-                              ? 'bg-red-600 text-white animate-blink shadow-lg shadow-red-900/20'
-                              : isLow 
-                                ? 'bg-amber-400 text-white shadow-sm' 
-                                : 'bg-emerald-50 text-emerald-700'
-                          }`}>
-                            {group.totalCount}
-                          </span>
-                        </td>
-                        <td className="px-8 py-7 text-center">
-                          <span className="text-[12px] font-black text-slate-600 bg-slate-100 px-3 py-1 rounded-lg">
-                            {group.nearestExpiry || '-'}
-                          </span>
-                        </td>
-                      </tr>
+                      <React.Fragment key={idx}>
+                        <tr 
+                          onClick={() => setSelectedInventoryItem(isExpanded ? null : group)}
+                          className={`hover:bg-slate-50/50 cursor-pointer transition-colors ${isCritical ? 'bg-red-50/30' : ''} ${isExpanded ? 'bg-blue-50/30' : ''}`}
+                        >
+                          <td className="px-8 py-7">
+                            <div className="flex items-center gap-3">
+                              <span className={`text-xs transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                              <div>
+                                <div className="font-black text-slate-800">{group.thaiName || group.englishName}</div>
+                                <div className="text-[10px] text-slate-400 font-bold uppercase">{group.manufacturer}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-8 py-7 text-center">
+                            <span className={`px-4 py-2 rounded-2xl font-black text-sm ${
+                              isCritical
+                                ? 'bg-red-600 text-white animate-blink shadow-lg shadow-red-900/20'
+                                : isLow 
+                                  ? 'bg-amber-400 text-white shadow-sm' 
+                                  : 'bg-emerald-50 text-emerald-700'
+                            }`}>
+                              {group.totalCount}
+                            </span>
+                          </td>
+                          <td className="px-8 py-7 text-center">
+                            <span className="text-[12px] font-black text-slate-600 bg-slate-100 px-3 py-1 rounded-lg">
+                              {group.nearestExpiry || '-'}
+                            </span>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="bg-slate-50/30">
+                            <td colSpan={3} className="px-8 py-4">
+                              <div className="bg-white rounded-2xl border border-slate-100 shadow-inner overflow-hidden animate-in slide-in-from-top-2">
+                                <table className="w-full text-left">
+                                  <thead className="bg-slate-100/50">
+                                    <tr>
+                                      <th className="px-6 py-3 text-[9px] font-black text-slate-400 uppercase">Batch No.</th>
+                                      <th className="px-6 py-3 text-[9px] font-black text-slate-400 uppercase">EXP Date</th>
+                                      <th className="px-6 py-3 text-[9px] font-black text-slate-400 uppercase text-center">Qty</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-50">
+                                    {group.batches.map((batch: StockItem, bIdx: number) => (
+                                      <tr key={bIdx} className="hover:bg-slate-50">
+                                        <td className="px-6 py-3 font-bold text-slate-700 text-xs">{batch.batch_no}</td>
+                                        <td className="px-6 py-3 font-bold text-slate-600 text-xs">{batch.exp}</td>
+                                        <td className="px-6 py-3 font-black text-blue-600 text-xs text-center">{batch.quantity}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
               </table>
               {isDataLoading && <div className="p-8 text-center text-slate-400 font-bold text-xs">กำลังโหลดข้อมูลล่าสุด...</div>}
             </div>
+          </div>
+        )}
+
+        {/* หน้าจอ Update Logs (Admin Only) */}
+        {activeView === View.UPDATE_LOGS && currentUser?.role === 'admin' && (
+          <div className="space-y-8 pb-32">
+            <div className="bg-slate-900 p-10 rounded-[3rem] text-white shadow-xl">
+              <h2 className="text-3xl font-black leading-none text-white">บันทึกการอัปเดตระบบ</h2>
+              <p className="text-xs font-bold text-slate-400 uppercase mt-3 tracking-widest">System Update Logs</p>
+            </div>
+
+            <div className="space-y-6">
+              {[
+                {
+                  version: 'Update - 011',
+                  date: '2026-04-25',
+                  changes: [
+                    'เพิ่มระบบดู Stock แยกตาม Batch และวันหมดอายุ (Sub-stock View)',
+                    'ปรับปรุงหน้า Inventory ให้สามารถคลิกเพื่อดูรายละเอียดรายการย่อยได้',
+                    'แก้ไขการจัดเรียงวันหมดอายุในหน้าสรุปสต็อก'
+                  ],
+                  isNew: true
+                },
+                {
+                  version: 'Update - 010',
+                  date: '2026-04-25',
+                  changes: [
+                    'เพิ่มหน้า Update Logs สำหรับติดตามประวัติการอัปเดตระบบ (เฉพาะ Admin)',
+                    'ปรับปรุงเวอร์ชันเป็น 010 เพื่อรองรับฟีเจอร์ใหม่',
+                    'แก้ไขลิงก์การนำทางในส่วนของ Header ให้ถูกต้อง'
+                  ]
+                },
+                {
+                  version: 'Update - 009',
+                  date: '2026-04-25',
+                  changes: [
+                    'เพิ่มการจดจำสีฉลากของ Lucenxia (ขาว 1.5%, น้ำเงิน 2.5%, ชมพู 4.25%)',
+                    'พัฒนาระบบ AI Scanner ให้แสดงรายการที่ใกล้เคียงเมื่อพบหลายรายการ',
+                    'แก้ไขระบบสแกนในหน้า "รับเข้า" และ "จ่ายออก" ให้ทำงานเสถียรขึ้น'
+                  ]
+                }
+              ].map(log => (
+                <div key={log.version} className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100 space-y-4 relative overflow-hidden">
+                  {log.isNew && <div className="absolute top-0 right-0 bg-blue-600 text-white text-[8px] font-black px-4 py-1 uppercase rounded-bl-xl tracking-widest shadow-lg">LATEST</div>}
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-xl font-black text-slate-800">{log.version}</h3>
+                    <span className="text-[10px] font-bold text-slate-400">{log.date}</span>
+                  </div>
+                  <ul className="space-y-2">
+                    {log.changes.map((change, i) => (
+                      <li key={i} className="flex gap-3 items-start">
+                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1.5 shrink-0"></span>
+                        <span className="text-sm font-bold text-slate-600 leading-relaxed">{change}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+            
+            <button onClick={() => setActiveView(View.INVENTORY)} className="w-full py-5 bg-slate-100 text-slate-400 font-black rounded-2xl">กลับหน้าหลัก</button>
           </div>
         )}
 

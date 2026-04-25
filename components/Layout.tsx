@@ -85,15 +85,15 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChan
                 <span className="bg-white text-blue-900 w-8 h-8 rounded-lg flex items-center justify-center text-sm transform group-active:scale-90 transition-transform">PNK</span>
                 PNK_PD <span className="text-blue-300 font-light">Stock</span>
                 {currentUser?.role === 'admin' && (
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onViewChange(View.UPDATE_LOGS);
-                    }}
-                    className="ml-1 text-[10px] font-bold text-blue-300/50 hover:text-white transition-colors hover:underline"
-                  >
-                    Update - 011
-                  </button>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onViewChange(View.UPDATE_LOGS);
+                      }}
+                      className="ml-1 text-[10px] font-bold text-blue-300/50 hover:text-white transition-colors hover:underline"
+                    >
+                      Update - 012
+                    </button>
                 )}
               </h1>
               <div className="text-[9px] font-bold text-blue-200/60 uppercase tracking-[0.2em] mt-0.5">

@@ -112,5 +112,6 @@ export enum View {
   GUEST_REQUEST = 'guest_request', // ขอน้ำยา
   GUEST_RETURN = 'guest_return',   // คืนน้ำยา
   QUEUE_LIST = 'queue_list',        // รายการรอคิว (สำหรับ Staff/Admin)
-  UPDATE_LOGS = 'update_logs'
+  UPDATE_LOGS = 'update_logs',
+  RECALIBRATE = 'recalibrate'
 }

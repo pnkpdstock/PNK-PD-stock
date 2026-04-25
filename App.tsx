@@ -952,7 +952,23 @@ const App: React.FC = () => {
                   <div className="space-y-4">
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase">Batch ที่ต้องการจ่าย</label>
-                      <input className="w-full p-4 bg-slate-50 rounded-xl outline-none font-black text-blue-900" placeholder="ระบุ Batch No." value={scanResult.batchNo} onChange={e => setScanResult({...scanResult, batchNo: e.target.value})} />
+                      <select 
+                        className="w-full p-4 bg-slate-50 rounded-xl outline-none font-black text-blue-900 appearance-none border border-transparent focus:border-red-500"
+                        value={scanResult.batchNo} 
+                        onChange={e => {
+                          const selectedBatch = e.target.value;
+                          setScanResult({...scanResult, batchNo: selectedBatch});
+                          // Potentially update EXP if we want to be fancy, but the scanner might have already found it.
+                          // Actually, for dropdown, it's better to just set the batch.
+                        }}
+                      >
+                        <option value="">-- เลือก Batch No. --</option>
+                        {groupedStock.find(g => (g.thaiName === matchedProduct?.thai_name || g.englishName === matchedProduct?.english_name))?.batches.map((b: StockItem) => (
+                          <option key={b.id} value={b.batch_no}>
+                            {b.batch_no} (EXP: {b.exp}) - คงเหลือ: {b.quantity}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-black text-slate-400 uppercase">ชื่อผู้ป่วย / หน่วยงาน</label>
@@ -1165,7 +1181,17 @@ const App: React.FC = () => {
                 <h2 className="text-3xl font-black text-slate-800">สต๊อกคงเหลือ</h2>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Cloud Sync Active</p>
               </div>
-              <button onClick={loadData} className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-100">🔄</button>
+              <div className="flex gap-2">
+                {currentUser?.role === 'admin' && (
+                  <button 
+                    onClick={() => setActiveView(View.RECALIBRATE)}
+                    className="px-6 py-3 bg-amber-500 text-white font-black rounded-2xl shadow-lg shadow-amber-900/10 hover:bg-amber-600 transition-all flex items-center gap-2"
+                  >
+                    <span>⚖️</span> ปรับสต็อก (Recalibrate)
+                  </button>
+                )}
+                <button onClick={loadData} className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-100">🔄</button>
+              </div>
             </div>
             <div className="bg-white rounded-[3rem] shadow-sm border border-slate-100 overflow-hidden">
               <table className="w-full text-left">
@@ -1250,6 +1276,93 @@ const App: React.FC = () => {
           </div>
         )}
 
+        {/* หน้าจอพิเศษ: Recalibrate Stock (Admin Only) */}
+        {activeView === View.RECALIBRATE && currentUser?.role === 'admin' && (
+          <div className="space-y-8 pb-32">
+            <div className="bg-amber-600 p-10 rounded-[3rem] text-white shadow-xl">
+              <h2 className="text-3xl font-black leading-none text-white">ปรับแก้สต็อกสินค้า</h2>
+              <p className="text-xs font-bold text-amber-100 uppercase mt-3 tracking-widest">Stock Recalibration Mode</p>
+            </div>
+
+            <div className="space-y-4">
+              {groupedStock.map((group: any, gIdx: number) => (
+                <div key={gIdx} className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100 space-y-6">
+                  <div>
+                    <h3 className="text-xl font-black text-slate-800">{group.thaiName || group.englishName}</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">{group.manufacturer}</p>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    {group.batches.map((batch: StockItem, bIdx: number) => (
+                      <div key={bIdx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div>
+                          <p className="text-xs font-black text-slate-700">Batch: {batch.batch_no}</p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase">EXP: {batch.exp}</p>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <button 
+                            disabled={isLoading}
+                            onClick={async () => {
+                              if (!window.confirm(`ยืนยันการจ่ายออก 1 หน่วย (ปรับแก้) สำหรับ Batch: ${batch.batch_no}?`)) return;
+                              setIsLoading(true);
+                              try {
+                                await storageService.releaseItemByBatch(batch.batch_no, 1, currentUser.username, "RECALIBRATION", new Date().toISOString().split('T')[0]);
+                                showSuccess("ปรับลดสต็อกแล้ว");
+                                loadData();
+                              } catch (err: any) {
+                                setError(err.message);
+                              } finally {
+                                setIsLoading(false);
+                              }
+                            }}
+                            className="bg-red-100 text-red-600 px-4 py-2 rounded-xl font-black text-xs hover:bg-red-200 transition-colors"
+                          >
+                            จ่ายออก (-1)
+                          </button>
+                          
+                          <div className="w-12 text-center font-black text-blue-600 text-lg">
+                            {batch.quantity}
+                          </div>
+
+                          <button 
+                            disabled={isLoading}
+                            onClick={async () => {
+                              setIsLoading(true);
+                              try {
+                                await storageService.saveItem({
+                                  thai_name: batch.thai_name,
+                                  english_name: batch.english_name,
+                                  batch_no: batch.batch_no,
+                                  mfd: batch.mfd,
+                                  exp: batch.exp,
+                                  manufacturer: batch.manufacturer,
+                                  quantity: 1,
+                                  receipt_date: new Date().toISOString().split('T')[0]
+                                }, currentUser.username);
+                                showSuccess("ปรับเพิ่มสต็อกแล้ว");
+                                loadData();
+                              } catch (err: any) {
+                                setError(err.message);
+                              } finally {
+                                setIsLoading(false);
+                              }
+                            }}
+                            className="bg-emerald-100 text-emerald-600 px-4 py-2 rounded-xl font-black text-xs hover:bg-emerald-200 transition-colors"
+                          >
+                            รับเข้า (+1)
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button onClick={() => setActiveView(View.INVENTORY)} className="w-full py-5 bg-slate-100 text-slate-400 font-black rounded-2xl">กลับหน้าหลัก</button>
+          </div>
+        )}
+
         {/* หน้าจอ Update Logs (Admin Only) */}
         {activeView === View.UPDATE_LOGS && currentUser?.role === 'admin' && (
           <div className="space-y-8 pb-32">
@@ -1261,14 +1374,23 @@ const App: React.FC = () => {
             <div className="space-y-6">
               {[
                 {
+                  version: 'Update - 012',
+                  date: '2026-04-25',
+                  changes: [
+                    'เพิ่มโหมด Recalibrate Stock สำหรับ Admin เพื่อปรับสต็อกได้ทันที (ไม่ต้องพิมพ์ชื่อ/Batch)',
+                    'เปลี่ยนช่องกรอก Batch No. ในหน้า "จ่ายออก" เป็น Dropdown เพื่อความรวดเร็ว',
+                    'ปรับปรุงเวอร์ชันเป็น 012'
+                  ],
+                  isNew: true
+                },
+                {
                   version: 'Update - 011',
                   date: '2026-04-25',
                   changes: [
                     'เพิ่มระบบดู Stock แยกตาม Batch และวันหมดอายุ (Sub-stock View)',
                     'ปรับปรุงหน้า Inventory ให้สามารถคลิกเพื่อดูรายละเอียดรายการย่อยได้',
                     'แก้ไขการจัดเรียงวันหมดอายุในหน้าสรุปสต็อก'
-                  ],
-                  isNew: true
+                  ]
                 },
                 {
                   version: 'Update - 010',

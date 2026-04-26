@@ -1289,12 +1289,9 @@ const App: React.FC = () => {
                           className={`hover:bg-slate-50/50 cursor-pointer transition-colors ${isCritical ? 'bg-red-50/30' : ''} ${isExpanded ? 'bg-blue-50/30' : ''}`}
                         >
                           <td className="px-8 py-7">
-                            <div className="flex items-center gap-3">
-                              <span className={`text-xs transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
-                              <div>
-                                <div className="font-black text-slate-800">{group.thaiName || group.englishName}</div>
-                                <div className="text-[10px] text-slate-400 font-bold uppercase">{group.manufacturer}</div>
-                              </div>
+                            <div>
+                              <div className="font-black text-slate-800">{group.thaiName || group.englishName}</div>
+                              <div className="text-[10px] text-slate-400 font-bold uppercase">{group.manufacturer}</div>
                             </div>
                           </td>
                           <td className="px-8 py-7 text-center">
@@ -1466,14 +1463,23 @@ const App: React.FC = () => {
             <div className="space-y-6">
               {[
                 {
+                  version: 'Update - 017',
+                  date: '2026-04-26',
+                  changes: [
+                    'ปรับปรุงหน้า Inventory โดยนำลูกศรด้านหน้าออกเพื่อให้ดูสะอาดขึ้น',
+                    'สามารถคลิกที่ "ชื่อสินค้า" เพื่อดูรายละเอียด Batch และตัวเลือกวันหมดอายุได้โดยตรง',
+                    'แก้ไขการจัดเรียง UI ให้รองรับหน้าจอที่กว้างขึ้น'
+                  ],
+                  isNew: true
+                },
+                {
                   version: 'Update - 016',
                   date: '2026-04-25',
                   changes: [
                     'ปรับปรุงรูปแบบวันหมดอายุใกล้สุดให้แสดงเพียง เดือน/ปี (MM/YYYY)',
                     'เพิ่มการตรวจจับข้อผิดพลาด Gmail Daily Limit (550) เพื่อหยุดการส่งซ้ำอัตโนมัติ',
                     'แก้ไขปัญหาแอพค้างจาก Email Loop เมื่อโควตาเต็ม'
-                  ],
-                  isNew: true
+                  ]
                 },
                 {
                   version: 'Update - 015',

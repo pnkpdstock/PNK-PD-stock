@@ -92,7 +92,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeView, onViewChan
                       }}
                       className="ml-1 text-[10px] font-bold text-blue-300/50 hover:text-white transition-colors hover:underline"
                     >
-                      Update - 017
+                      Update - 018
                     </button>
                 )}
               </h1>

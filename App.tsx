@@ -1271,9 +1271,9 @@ const App: React.FC = () => {
               <table className="w-full text-left">
                 <thead className="bg-slate-50/50">
                   <tr>
-                    <th className="px-8 py-6 text-[10px] font-black text-slate-500 uppercase">สินค้า</th>
-                    <th className="px-8 py-6 text-[10px] font-black text-slate-500 uppercase text-center">คงเหลือ</th>
-                    <th className="px-8 py-6 text-[10px] font-black text-slate-500 uppercase text-center">วันหมดอายุใกล้สุด</th>
+                    <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-500 uppercase">สินค้า</th>
+                    <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-500 uppercase text-center">คงเหลือ</th>
+                    <th className="px-4 sm:px-8 py-6 text-[10px] font-black text-slate-500 uppercase text-center">วันหมดอายุใกล้สุด</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -1288,14 +1288,14 @@ const App: React.FC = () => {
                           onClick={() => setSelectedInventoryItem(isExpanded ? null : group)}
                           className={`hover:bg-slate-50/50 cursor-pointer transition-colors ${isCritical ? 'bg-red-50/30' : ''} ${isExpanded ? 'bg-blue-50/30' : ''}`}
                         >
-                          <td className="px-8 py-7">
+                          <td className="px-4 sm:px-8 py-5 sm:py-7">
                             <div>
-                              <div className="font-black text-slate-800">{group.thaiName || group.englishName}</div>
+                              <div className="font-black text-slate-800 text-xs sm:text-base">{group.thaiName || group.englishName}</div>
                               <div className="text-[10px] text-slate-400 font-bold uppercase">{group.manufacturer}</div>
                             </div>
                           </td>
-                          <td className="px-8 py-7 text-center">
-                            <span className={`px-4 py-2 rounded-2xl font-black text-sm ${
+                          <td className="px-4 sm:px-8 py-5 sm:py-7 text-center">
+                            <span className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-2xl font-black text-xs sm:text-sm ${
                               isCritical
                                 ? 'bg-red-600 text-white animate-blink shadow-lg shadow-red-900/20'
                                 : isLow 
@@ -1305,8 +1305,8 @@ const App: React.FC = () => {
                               {group.totalCount}
                             </span>
                           </td>
-                          <td className="px-8 py-7 text-center">
-                            <span className="text-[12px] font-black text-slate-600 bg-slate-100 px-3 py-1 rounded-lg">
+                          <td className="px-4 sm:px-8 py-5 sm:py-7 text-center">
+                            <span className="text-[11px] sm:text-[12px] font-black text-slate-600 bg-slate-100 px-2 sm:px-3 py-1 rounded-lg whitespace-nowrap">
                               {group.nearestExpiry ? (() => {
                                 const parts = group.nearestExpiry.split('-');
                                 return parts.length >= 2 ? `${parts[1]}/${parts[0]}` : group.nearestExpiry;
@@ -1316,21 +1316,21 @@ const App: React.FC = () => {
                         </tr>
                         {isExpanded && (
                           <tr className="bg-slate-50/30">
-                            <td colSpan={3} className="px-8 py-4">
+                            <td colSpan={3} className="px-2 sm:px-8 py-4">
                               <div className="bg-white rounded-2xl border border-slate-100 shadow-inner overflow-hidden animate-in slide-in-from-top-2">
                                 <table className="w-full text-left">
                                   <thead className="bg-slate-100/50">
                                     <tr>
-                                      <th className="px-6 py-3 text-[9px] font-black text-slate-400 uppercase">Batch No.</th>
-                                      <th className="px-6 py-3 text-[9px] font-black text-slate-400 uppercase">EXP Date</th>
-                                      <th className="px-6 py-3 text-[9px] font-black text-slate-400 uppercase text-center">Qty</th>
+                                      <th className="px-4 sm:px-6 py-3 text-[9px] font-black text-slate-400 uppercase">Batch No.</th>
+                                      <th className="px-4 sm:px-6 py-3 text-[9px] font-black text-slate-400 uppercase">EXP Date</th>
+                                      <th className="px-4 sm:px-6 py-3 text-[9px] font-black text-slate-400 uppercase text-center">Qty</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-50">
                                     {group.batches.map((batch: StockItem, bIdx: number) => (
                                       <tr key={bIdx} className="hover:bg-slate-50">
-                                        <td className="px-6 py-3 font-bold text-slate-700 text-xs">{batch.batch_no}</td>
-                                        <td className="px-6 py-3 font-bold text-slate-600 text-xs">
+                                        <td className="px-4 sm:px-6 py-3 font-bold text-slate-700 text-xs truncate max-w-[80px] sm:max-w-none">{batch.batch_no}</td>
+                                        <td className="px-4 sm:px-6 py-3 font-bold text-slate-600 text-xs whitespace-nowrap">
                                           {batch.exp ? (() => {
                                             const parts = batch.exp.split('-');
                                             return parts.length >= 2 ? `${parts[1]}/${parts[0]}` : batch.exp;
@@ -1463,14 +1463,23 @@ const App: React.FC = () => {
             <div className="space-y-6">
               {[
                 {
+                  version: 'Update - 018',
+                  date: '2026-04-26',
+                  changes: [
+                    'ปรับปรุงการแสดงผลวั้นหมดอายุให้ชัดเจนบนมือถือทุกรุ่น',
+                    'ลดความหนาแน่นของตาราง Inventory เพื่อให้อ่านง่ายขึ้นบนหน้าจอขนาดเล็ก',
+                    'เพิ่มการป้องกันข้อความวันหมดอายุตัดบรรจุ (whitespace-nowrap)'
+                  ],
+                  isNew: true
+                },
+                {
                   version: 'Update - 017',
                   date: '2026-04-26',
                   changes: [
                     'ปรับปรุงหน้า Inventory โดยนำลูกศรด้านหน้าออกเพื่อให้ดูสะอาดขึ้น',
                     'สามารถคลิกที่ "ชื่อสินค้า" เพื่อดูรายละเอียด Batch และตัวเลือกวันหมดอายุได้โดยตรง',
                     'แก้ไขการจัดเรียง UI ให้รองรับหน้าจอที่กว้างขึ้น'
-                  ],
-                  isNew: true
+                  ]
                 },
                 {
                   version: 'Update - 016',

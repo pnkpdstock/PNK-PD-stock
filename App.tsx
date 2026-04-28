@@ -380,7 +380,15 @@ const App: React.FC = () => {
     }
     setIsLoading(true);
     try {
-      const releasedItem = await storageService.releaseItemByBatch(scanResult.batchNo, inputQty, currentUser.username, patientName, manualDate);
+      const releasedItem = await storageService.releaseItemByBatch(
+        scanResult.batchNo, 
+        inputQty, 
+        currentUser.username, 
+        patientName, 
+        manualDate,
+        matchedProduct?.thai_name,
+        matchedProduct?.english_name
+      );
       if (releasedItem) {
         showSuccess(`จ่ายออกสำเร็จ`);
         setScanResult(null);
@@ -617,7 +625,19 @@ const App: React.FC = () => {
         };
       }
       groups[key].totalCount += (item.quantity || 1);
-      groups[key].batches.push(item);
+      
+      // Merge identical batches (same batch_no and exp)
+      const existingBatch = groups[key].batches.find((b: any) => 
+        b.batch_no === item.batch_no && b.exp === item.exp
+      );
+      
+      if (existingBatch) {
+        existingBatch.quantity += (item.quantity || 1);
+      } else {
+        // We need a copy of the item so we don't mutate the original if it's used elsewhere
+        groups[key].batches.push({ ...item });
+      }
+
       if (item.exp && (!groups[key].nearestExpiry || item.exp < groups[key].nearestExpiry)) {
         groups[key].nearestExpiry = item.exp;
       }
@@ -1037,8 +1057,8 @@ const App: React.FC = () => {
                         }}
                       >
                         <option value="">-- เลือก Batch No. --</option>
-                        {groupedStock.find(g => (g.thaiName === matchedProduct?.thai_name || g.englishName === matchedProduct?.english_name))?.batches.map((b: StockItem) => (
-                          <option key={b.id} value={b.batch_no}>
+                        {(matchedProduct?.id ? groupedStock.find(g => g.productId === matchedProduct.id) : groupedStock.find(g => (g.thaiName === matchedProduct?.thai_name || g.englishName === matchedProduct?.english_name)))?.batches.map((b: StockItem, bIdx: number) => (
+                          <option key={`${b.batch_no}-${b.exp}-${bIdx}`} value={b.batch_no}>
                             {b.batch_no} (EXP: {b.exp}) - คงเหลือ: {b.quantity}
                           </option>
                         ))}
@@ -1462,6 +1482,16 @@ const App: React.FC = () => {
 
             <div className="space-y-6">
               {[
+                {
+                  version: 'Update - 019',
+                  date: '2026-04-28',
+                  changes: [
+                    'แก้ไขปัญหาการเลือก Batch ผิดตัวในหน้า "จ่ายสินค้าออก"',
+                    'รวมรายการ Batch ที่มีเลขเดียวกันและวันหมดอายุเดียวกันให้เป็นรายการเดียวใน UI',
+                    'เพิ่มความแม่นยำในการจ่ายสินค้าโดยระบุชื่อสินค้าควบคู่กับ Batch No.'
+                  ],
+                  isNew: true
+                },
                 {
                   version: 'Update - 018',
                   date: '2026-04-26',

@@ -296,13 +296,20 @@ export const storageService = {
     return data as StockItem;
   },
 
-  releaseItemByBatch: async (batch_no: string, qtyToRelease: number, username?: string, patient_name?: string, releaseDate?: string): Promise<StockItem | null> => {
-    const { data: items, error: findError } = await supabase
+  releaseItemByBatch: async (batch_no: string, qtyToRelease: number, username?: string, patient_name?: string, releaseDate?: string, thaiName?: string, englishName?: string): Promise<StockItem | null> => {
+    let query = supabase
       .from('stock_items')
       .select('*')
       .eq('batch_no', batch_no)
-      .eq('status', 'In Stock')
-      .order('timestamp', { ascending: true });
+      .eq('status', 'In Stock');
+
+    if (thaiName) {
+      query = query.eq('thai_name', thaiName);
+    } else if (englishName) {
+      query = query.eq('english_name', englishName);
+    }
+
+    const { data: items, error: findError } = await query.order('timestamp', { ascending: true });
 
     if (findError || !items || items.length === 0) return null;
 
